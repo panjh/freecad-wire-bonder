@@ -124,12 +124,11 @@ Gui.activateWorkbench("WireBonderWorkbench")
 | Clearance | 500 µm | Height of the flat top **above the centroid line** |
 | Wire Plane Rotation | 0° | Rotation of the wire plane about the centroid line (−180°~180°); **0° is coincident with the bisector plane** |
 | Peak Position Ratio | 0.42 | Position of the flat top as a ratio of the centroid distance (0.05–0.95) |
-| Rise Height Ratio | 0.60 | Height ratio of the steep rise point near the start, mimicking the wire bonder |
-| Fall Height Ratio | 0.12 | Height ratio near the landing point; kept low so the descent stays straight |
+| Rise Angle | 75° | Direction the wire leaves the first pad, measured from the pad-to-pad line |
+| Fall Angle | 20° | Direction the wire reaches the second pad, measured from the pad-to-pad line |
 | Bond Bump at C1 | Sphere | Shape at the first bond point: **none / sphere / frustum** |
 | Bond Bump at C2 | Sphere | Shape at the second bond point; may differ from C1 (e.g. ball on the chip, frustum on the substrate) |
-| Lead Distance | 10 µm | Horizontal distance from each pad to its entry/exit control point; with the height ratios it sets the entry and exit angles |
-| Top Length | 200 µm | Length of the flat top of the loop; a longer top leaves a shorter but steeper descent |
+| Lead Distance | 30 µm | Distance from each pad to its control point B / D, measured along the rise / fall ray |
 | Ball Diameter | 50 µm | Sphere: the ball diameter (about 2.5× the wire diameter). Frustum: the bump height |
 | Ball Top Diameter | 50 µm | Frustum: diameter of the end away from the pad (shown for frustum only) |
 | Ball Bottom Diameter | 50 µm | Frustum: diameter of the end on the pad (shown for frustum only) |
@@ -182,8 +181,8 @@ accept expressions as well.
 
 ### Parametric Editing
 
-After creation you can edit `WireDiameter`, `Clearance`, `PlaneRotation`, `PeakRatio`, `RiseRatio`,
-`FallRatio`, `MakeSolid`, `ShowCentreline`, `MakeBalls` and `BallDiameter` in the **property editor** —
+After creation you can edit `WireDiameter`, `Clearance`, `PlaneRotation`, `PeakRatio`, `RiseAngle`,
+`FallAngle`, `LeadDistance`, `MakeSolid`, `ShowCentreline` and `BallDiameter` in the **property editor** —
 the geometry rebuilds automatically. You may also change `Face1` / `Face2` to use different faces.
 
 ## 4. Scripting / Console Usage
@@ -209,8 +208,7 @@ result = core.compute_from_faces(
     rise_ratio=0.60,      # steep rise ratio
     fall_ratio=0.20,      # landing height ratio
     make_solid=False,     # compute the centreline only
-    make_balls=True,      # create the bond balls
-    ball_diameter=0.05,   # bond ball diameter 50 µm
+        ball_diameter=0.05,   # bond ball diameter 50 µm
 )
 print(result["frame"].length)      # centroid distance
 print(result["centre_line"])       # centreline Wire
@@ -232,7 +230,8 @@ obj.Face2 = (doc.getObject("Pad2"), "Face6")
 obj.Clearance = "500 um"
 obj.WireDiameter = "20 um"
 obj.BallDiameter = "50 um"
-obj.MakeBalls = True
+obj.StartBallMode = "sphere"
+obj.EndBallMode = "frustum"
 doc.recompute()
 ```
 
@@ -247,7 +246,7 @@ doc.recompute()
 - **Clearance versus span**: when the clearance exceeds the centroid distance the loop looks exaggerated (the panel shows an orange note); remember the loop height is measured **relative to the centroid line**, not to the component surface.
 - **Do not use the transform tool on PartDesign patterns**: `LinearPattern`/`LinearPattern001` are "multi-transform features" and PartDesign only allows transforming additive/subtractive features, so transforming them raises `ViewProviderTransformed: Only additive and subtractive features can be transformed`. To change a pattern, edit its `Length`/`Occurrences`/`Direction`; to move the whole part, select the `Body` and change its `Placement`.
 - `WireBondPlane` is a **helper plane**: the one created by `Create Wire Bond` is hidden automatically (show it from the tree when needed); use the `Create Bisector Plane` command if you want a visible bisector plane directly. Its rectangle extends automatically and can be tuned with `Margin` and `WidthFactor`.
-- Bond balls are placed at the two face centroids and their diameter comes from `BallDiameter`; they take part in the parametric rebuild as well — change the diameter or disable `MakeBalls`.
+- Bond bumps are placed at the two face centroids and their diameter comes from `BallDiameter`; they take part in the parametric rebuild as well — change the diameter or set the matching **Bond Bump** selector to "none".
 - The wire solid and the centreline live in the same `Compound`, so they **share a single color** (gold).
 
 ## 6. Troubleshooting Addon Loading

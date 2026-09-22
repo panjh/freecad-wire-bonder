@@ -34,18 +34,15 @@ _SPEC = {
     "ball_diameter": ("BallDiameter", core.DEFAULT_BALL_DIAMETER),
     "plane_rotation": ("PlaneRotation", core.DEFAULT_PLANE_ROTATION),
     "peak_ratio": ("PeakRatio", core.DEFAULT_PEAK_RATIO),
-    "rise_ratio": ("RiseRatio", core.DEFAULT_RISE_RATIO),
-    "fall_ratio": ("FallRatio", core.DEFAULT_FALL_RATIO),
+    "rise_angle": ("RiseAngle", core.DEFAULT_RISE_ANGLE),
+    "fall_angle": ("FallAngle", core.DEFAULT_FALL_ANGLE),
     "make_solid": ("MakeSolid", False),
     "show_centreline": ("ShowCentreline", True),
-    "make_balls": ("MakeBalls", True),
-    "ball_mode": ("BallMode", core.BUMP_SPHERE),
     "start_ball_mode": ("StartBallMode", core.BUMP_SPHERE),
     "end_ball_mode": ("EndBallMode", core.BUMP_SPHERE),
     "ball_top_diameter": ("BallTopDiameter", core.DEFAULT_BALL_DIAMETER),
     "ball_bottom_diameter": ("BallBottomDiameter", core.DEFAULT_BALL_DIAMETER),
     "lead_distance": ("LeadDistance", core.DEFAULT_LEAD_DISTANCE),
-    "top_length": ("TopLength", core.DEFAULT_TOP_LENGTH),
     "create_plane": ("CreatePlane", False),
     # UI state: which panel sections are expanded (not a geometry parameter)
     "ui_show_faces": ("UiShowFaces", True),
@@ -57,7 +54,6 @@ _SPEC = {
 _BOOLEAN_KEYS = (
     "make_solid",
     "show_centreline",
-    "make_balls",
     "create_plane",
     "ui_show_faces",
     "ui_show_params",
@@ -65,10 +61,10 @@ _BOOLEAN_KEYS = (
 )
 
 #: keys stored as strings (enumerations, free text)
-_STRING_KEYS = ("ball_mode", "start_ball_mode", "end_ball_mode")
+_STRING_KEYS = ("start_ball_mode", "end_ball_mode")
 
 #: enumeration keys that must hold one of :data:`core.BUMP_MODES`
-_MODE_KEYS = ("ball_mode", "start_ball_mode", "end_ball_mode")
+_MODE_KEYS = ("start_ball_mode", "end_ball_mode")
 
 
 def _open_params():
@@ -131,11 +127,10 @@ class Settings(dict):
             "clearance": (0.0, 100.0),             # 0 ... 100000 um
             "ball_diameter": (0.001, 20.0),        # 1 um ... 20000 um
             "lead_distance": (0.0, 5.0),           # 0 ... 5000 um
-            "top_length": (0.0, 20.0),             # 0 ... 20000 um
             "plane_rotation": (-180.0, 180.0),
             "peak_ratio": (0.05, 0.95),
-            "rise_ratio": (0.0, 1.0),
-            "fall_ratio": (0.0, 0.60),
+            "rise_angle": (0.0, 89.0),
+            "fall_angle": (0.0, 89.0),
         }
         for key, (low, high) in limits.items():
             try:

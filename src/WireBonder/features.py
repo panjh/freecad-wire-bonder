@@ -55,14 +55,16 @@ class WireBondFeature:
                       _("Loop peak position as a ratio of the centroid "
                         "distance (0.05 - 0.95)"),
                       core.DEFAULT_PEAK_RATIO)
-        _add_property(obj, "App::PropertyFloat", "RiseRatio", "WireBond",
-                      _("Height ratio of the steep rise point near the start "
-                        "(0 - 1)"),
-                      core.DEFAULT_RISE_RATIO)
-        _add_property(obj, "App::PropertyFloat", "FallRatio", "WireBond",
-                      _("Height ratio of the descending point near the end "
-                        "(0 - 0.3)"),
-                      core.DEFAULT_FALL_RATIO)
+        _add_property(obj, "App::PropertyAngle", "RiseAngle", "WireBond",
+                      _("Angle at which the wire leaves the first pad, measured "
+                        "from the line between the pads: 0 deg points at the "
+                        "second pad, 90 deg is perpendicular (straight up)"),
+                      core.DEFAULT_RISE_ANGLE)
+        _add_property(obj, "App::PropertyAngle", "FallAngle", "WireBond",
+                      _("Angle at which the wire reaches the second pad, "
+                        "measured from the line between the pads: 0 deg points "
+                        "at the first pad, 90 deg is perpendicular"),
+                      core.DEFAULT_FALL_ANGLE)
         _add_property(obj, "App::PropertyBool", "MakeSolid", "WireBond",
                       _("Create the gold wire solid (slower for very small "
                         "diameters)"), False)
@@ -71,16 +73,12 @@ class WireBondFeature:
         # A PropertyEnumeration stores its choices when a *list* is assigned,
         # and its current value when a *string* is assigned - so the list has to
         # come first. Read the choices back with
-        # ``obj.getEnumerationsOfProperty("BallMode")``; ``list(obj.BallMode)``
-        # would iterate the current value string instead.
-        _add_property(obj, "App::PropertyEnumeration", "BallMode", "WireBond",
-                      _("Bond bump shape: none / sphere (ball bond) / "
-                        "frustum (truncated cone)"))
-        obj.BallMode = list(core.BUMP_MODES)
-        obj.BallMode = core.BUMP_SPHERE
-        # Per-end shape: C1 (first bond point) and C2 (second bond point) may
-        # differ. ``BallMode`` acts as the default for both, so older documents
-        # and scripts keep working unchanged.
+        # ``obj.getEnumerationsOfProperty("StartBallMode")``;
+        # ``list(obj.StartBallMode)`` would iterate the current value string.
+        #
+        # One selector per end: C1 (first bond point) and C2 (second bond point).
+        # They replaced the earlier single ``BallMode`` plus the ``MakeBalls``
+        # switch, which could not express "a ball here, a wedge there".
         _add_property(obj, "App::PropertyEnumeration", "StartBallMode", "WireBond",
                       _("Shape of the bump at the first bond point (C1)"))
         obj.StartBallMode = list(core.BUMP_MODES)
@@ -90,18 +88,9 @@ class WireBondFeature:
         obj.EndBallMode = list(core.BUMP_MODES)
         obj.EndBallMode = core.BUMP_SPHERE
         _add_property(obj, "App::PropertyLength", "LeadDistance", "WireBond",
-                      _("Distance from each pad to its entry/exit control point; "
-                        "with the rise/fall ratios it sets the entry and exit "
-                        "angles (default 10 um)"),
+                      _("Distance from each pad to its entry/exit control point, "
+                        "measured along the rise/fall ray (default 10 um)"),
                       core.DEFAULT_LEAD_DISTANCE)
-        _add_property(obj, "App::PropertyLength", "TopLength", "WireBond",
-                      _("Length of the flat section at the top of the loop "
-                        "(default 300 um); a longer top leaves a shorter but "
-                        "steeper descent"),
-                      core.DEFAULT_TOP_LENGTH)
-        _add_property(obj, "App::PropertyBool", "MakeBalls", "WireBond",
-                      _("Legacy switch: unchecking it is the same as setting "
-                        "Bond Shape to none"), True)
         _add_property(obj, "App::PropertyLength", "BallDiameter", "WireBond",
                       _("Ball diameter (default 50 um); for a frustum it is "
                         "the bump height"),
@@ -135,24 +124,18 @@ class WireBondFeature:
             wire_diameter=float(obj.WireDiameter),
             clearance=float(obj.Clearance),
             peak_ratio=float(obj.PeakRatio),
-            rise_ratio=float(obj.RiseRatio),
-            fall_ratio=float(obj.FallRatio),
+            rise_angle=obj.RiseAngle.getValueAs("deg"),
+            fall_angle=obj.FallAngle.getValueAs("deg"),
             make_solid=bool(obj.MakeSolid),
-            make_balls=bool(obj.MakeBalls),
             ball_diameter=float(obj.BallDiameter),
-            ball_mode=getattr(obj, "BallMode", core.BUMP_SPHERE),
             top_diameter=float(getattr(obj, "BallTopDiameter",
                                        obj.BallDiameter)),
             bottom_diameter=float(getattr(obj, "BallBottomDiameter",
                                           obj.BallDiameter)),
-            start_ball_mode=getattr(obj, "StartBallMode",
-                                    getattr(obj, "BallMode", core.BUMP_SPHERE)),
-            end_ball_mode=getattr(obj, "EndBallMode",
-                                  getattr(obj, "BallMode", core.BUMP_SPHERE)),
+            start_ball_mode=getattr(obj, "StartBallMode", core.BUMP_SPHERE),
+            end_ball_mode=getattr(obj, "EndBallMode", core.BUMP_SPHERE),
             lead_distance=float(getattr(obj, "LeadDistance",
                                         core.DEFAULT_LEAD_DISTANCE)),
-            top_length=float(getattr(obj, "TopLength",
-                                     core.DEFAULT_TOP_LENGTH)),
             rotation_deg=obj.PlaneRotation.getValueAs("deg"),
         )
 

@@ -122,8 +122,7 @@ Gui.activateWorkbench("WireBonderWorkbench")
 | 落线高度比例 | 0.20 | 接近终点时的高度比例，控制落线姿态 |
 | 起点焊球 (C1) | 球形 | C1 处凸点形状：**无 / 球形 / 圆台** |
 | 终点焊球 (C2) | 球形 | C2 处凸点形状，可与起点不同（例如芯片端球形、基板端圆台） |
-| 平顶长度 | 200 µm | 弧线顶部平直段的长度；越长则下降段越短越陡 |
-| 进出线距离 | 10 µm | 每个焊盘到其进出线控制点的水平距离；与高度比例一起决定进出线角度 |
+| 进出线距离 | 30 µm | 每个焊盘沿出线/落线射线到控制点 B / D 的距离 |
 | 焊球直径 | 50 µm | 球形时为球径（约为线径 2.5 倍）；圆台时兼作凸点高度 |
 | 上底直径 | 50 µm | 圆台远离焊盘一端的直径（仅选「圆台」时显示） |
 | 下底直径 | 50 µm | 圆台贴着焊盘一端的直径（仅选「圆台」时显示） |
@@ -169,7 +168,7 @@ Gui.activateWorkbench("WireBonderWorkbench")
 
 ### 参数化修改
 
-生成后可直接在**属性编辑器**里改 `WireDiameter`、`Clearance`、`PlaneRotation`、`PeakRatio`、`RiseRatio`、`FallRatio`、`MakeSolid`、`ShowCentreline`、`MakeBalls`、`BallDiameter` 等，几何会自动重建；也可以改 `Face1` / `Face2` 换用其他平面。
+生成后可直接在**属性编辑器**里改 `WireDiameter`、`Clearance`、`PlaneRotation`、`PeakRatio`、`RiseAngle`、`FallAngle`、`LeadDistance`、`MakeSolid`、`ShowCentreline`、`StartBallMode`、`EndBallMode`、`BallDiameter` 等，几何会自动重建；也可以改 `Face1` / `Face2` 换用其他平面。
 
 ## 4. 脚本 / 控制台用法
 
@@ -194,8 +193,7 @@ result = core.compute_from_faces(
     rise_ratio=0.60,      # 出线陡升比例
     fall_ratio=0.20,      # 落线高度比例
     make_solid=False,     # 只算中心线
-    make_balls=True,      # 生成焊球
-    ball_diameter=0.05,   # 焊球直径 50 µm
+        ball_diameter=0.05,   # 焊球直径 50 µm
 )
 print(result["frame"].length)      # 两质心距离
 print(result["centre_line"])       # 中心线 Wire
@@ -217,7 +215,8 @@ obj.Face2 = (doc.getObject("Pad2"), "Face6")
 obj.Clearance = "500 um"
 obj.WireDiameter = "20 um"
 obj.BallDiameter = "50 um"
-obj.MakeBalls = True
+obj.StartBallMode = "sphere"
+obj.EndBallMode = "frustum"
 doc.recompute()
 ```
 
@@ -232,7 +231,7 @@ doc.recompute()
 - **净空高度与间距**：当净空高度大于两质心间距时，弧线会非常夸张（面板会给出橙色提醒）；注意弧高是**相对两质心连线**的，不是相对元器件表面。
 - **不要对 PartDesign 的阵列特征使用变换工具**：`LinearPattern`/`LinearPattern001` 等属于“多变换特征”，PartDesign 只允许变换 additive/subtractive 特征，对它执行变换会报 `ViewProviderTransformed: Only additive and subtractive features can be transformed`。要改阵列请修改其 `Length`/`Occurrences`/`Direction` 参数；要整体移动请选中 `Body` 改 `Placement`。
 - `WireBondPlane` 是**辅助面**：`Create Wire Bond` 流程生成的辅助面会自动隐藏（需要时在模型树里勾选显示）；若想直接得到可见的平分面，请使用 `Create Bisector Plane` 命令。其矩形范围自动外扩，可在属性中调整 `Margin` 与 `WidthFactor`。
-- 焊球位于两个平面的质心处，直径由 `BallDiameter` 指定；它同样参与参数化重建，改直径或关闭 `MakeBalls` 即可。
+- 焊球位于两个平面的质心处，直径由 `BallDiameter` 指定；它同样参与参数化重建，改直径或把对应端的「焊球形状」设为「无」即可。
 - 金线实体与中心线处于同一 `Compound` 中，因此**共用一种颜色**（金色）。
 
 ## 6. 排查加载问题

@@ -165,6 +165,29 @@ _ZH = {
     "Bond Bump at C2": "终点焊球 (C2)",
     "Lead Distance": "进出线距离",
     "Top Length": "平顶长度",
+    "Rise Angle": "出线角度",
+    "Fall Angle": "落线角度",
+    "Angle at which the wire leaves the first pad, measured from the "
+    "line between the pads.\n0 deg = along that line towards the "
+    "second pad, 90 deg = perpendicular (straight up).":
+        "金线离开第一个焊盘的角度, 以两焊盘连线为基准。\n"
+        "0° = 沿连线指向第二个焊盘, 90° = 垂直于连线 (正上方)。",
+    "Angle at which the wire reaches the second pad, measured from "
+    "the line between the pads.\n0 deg = along that line towards the "
+    "first pad, 90 deg = perpendicular (straight up).":
+        "金线到达第二个焊盘的角度, 以两焊盘连线为基准。\n"
+        "0° = 沿连线指向第一个焊盘, 90° = 垂直于连线 (正上方)。",
+    "Angle at which the wire leaves the first pad, measured "
+    "from the line between the pads: 0 deg points at the "
+    "second pad, 90 deg is perpendicular (straight up)":
+        "金线离开第一个焊盘的角度, 以两焊盘连线为基准: 0° 指向第二个焊盘, 90° 垂直于连线 (正上方)",
+    "Angle at which the wire reaches the second pad, "
+    "measured from the line between the pads: 0 deg points "
+    "at the first pad, 90 deg is perpendicular":
+        "金线到达第二个焊盘的角度, 以两焊盘连线为基准: 0° 指向第一个焊盘, 90° 垂直于连线",
+    "Distance from each pad to its entry/exit control point, "
+    "measured along the rise/fall ray (default 10 um)":
+        "每个焊盘到其进出线控制点的距离, 沿出线/落线方向测量 (默认 10 µm)",
     "Length of the flat top of the loop. Between the two lead-in "
     "points the remaining span is shared, so a longer top means a "
     "shorter but steeper descent.":
@@ -210,9 +233,6 @@ _ZH = {
         "圆台: 远离焊盘那一端的直径 (上底)。",
     "Frustum: diameter of the end sitting on the pad.":
         "圆台: 贴着焊盘那一端的直径 (下底)。",
-    "Quick switch for \"no bumps\"; the shape is chosen under "
-    "Bond Bump in the parameters section.":
-        "快捷开关, 取消即\"不生成凸点\"; 具体形状在参数区的「焊球形状」中选择。",
     "Bond bump shape: none / sphere (ball bond) / "
     "frustum (truncated cone)":
         "焊点凸起形状: 无 / 球形 (ball bond) / 圆台 (截锥)",

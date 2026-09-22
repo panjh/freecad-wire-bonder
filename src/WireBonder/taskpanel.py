@@ -330,13 +330,6 @@ class WireBondTaskPanel:
         # Restore the values used last time, so repeated wire bonds do not need
         # the same numbers typed in again (stored in the FreeCAD user parameters).
         self.settings = settings.load_defaults()
-        # remembered so the "create bond balls" checkbox can restore both ends
-        self._last_ball_modes = (
-            self.settings.get("start_ball_mode", core.BUMP_SPHERE),
-            self.settings.get("end_ball_mode", core.BUMP_SPHERE),
-        )
-        if self._last_ball_modes == (core.BUMP_NONE, core.BUMP_NONE):
-            self._last_ball_modes = (core.BUMP_SPHERE, core.BUMP_SPHERE)
 
         self.form = QtWidgets.QWidget()
         self.form.setWindowTitle(_("Wire Bond"))
@@ -349,34 +342,21 @@ class WireBondTaskPanel:
         unit the user chose to display them in.
         """
         start_mode, end_mode = self.selected_ball_modes()
-        # legacy single-shape key: kept meaningful ("none" only when both ends
-        # are off) so older parameter files and scripts still behave
-        if start_mode == end_mode:
-            combined_mode = start_mode
-        elif core.BUMP_NONE in (start_mode, end_mode):
-            combined_mode = (end_mode if start_mode == core.BUMP_NONE
-                             else start_mode)
-        else:
-            combined_mode = core.BUMP_FRUSTUM
         return {
             "wire_diameter": get_length_mm(self.diameter_um),
             "clearance": get_length_mm(self.clearance_um),
             "ball_diameter": get_length_mm(self.ball_diameter_um),
-            "ball_mode": combined_mode,
             "start_ball_mode": start_mode,
             "end_ball_mode": end_mode,
             "ball_top_diameter": get_length_mm(self.ball_top_um),
             "ball_bottom_diameter": get_length_mm(self.ball_bottom_um),
             "plane_rotation": get_quantity(self.plane_rotation_deg, "deg"),
             "peak_ratio": get_number(self.peak_ratio),
-            "rise_ratio": get_number(self.rise_ratio),
-            "fall_ratio": get_number(self.fall_ratio),
+            "rise_angle": get_quantity(self.rise_angle, "deg"),
+            "fall_angle": get_quantity(self.fall_angle, "deg"),
             "lead_distance": get_length_mm(self.lead_distance),
-            "top_length": get_length_mm(self.top_length),
             "make_solid": self.make_solid.isChecked(),
             "show_centreline": self.show_centreline.isChecked(),
-            # kept for the older parameter files / object property
-            "make_balls": core.BUMP_NONE not in (start_mode, end_mode),
             "create_plane": self.create_plane.isChecked(),
         }
 
@@ -430,44 +410,6 @@ class WireBondTaskPanel:
         """Return ``(mode_at_c1, mode_at_c2)``."""
         return (self._combo_mode(self.start_ball_mode),
                 self._combo_mode(self.end_ball_mode))
-
-    def _on_make_balls_toggled(self, checked):
-        """Keep the legacy checkbox and both shape combo boxes in agreement.
-
-        Unchecking means "no bumps at either end"; re-checking restores the
-        shape each end had before (sphere by default).
-        """
-        if self.start_ball_mode is None:
-            return
-        start_mode, end_mode = self.selected_ball_modes()
-        if not checked:
-            if (start_mode, end_mode) != (core.BUMP_NONE, core.BUMP_NONE):
-                self._last_ball_modes = (start_mode, end_mode)
-                targets = (core.BUMP_NONE, core.BUMP_NONE)
-            else:
-                return
-        else:
-            # ``_last_ball_modes`` is a (start, end) pair - it has to be unpacked
-            # per end, not used as a single value
-            restore_start, restore_end = getattr(
-                self, "_last_ball_modes", (core.BUMP_SPHERE, core.BUMP_SPHERE))
-            targets = (restore_start if start_mode == core.BUMP_NONE
-                       else start_mode,
-                       restore_end if end_mode == core.BUMP_NONE
-                       else end_mode)
-            if targets == (start_mode, end_mode):
-                return
-
-        for combo, value in ((self.start_ball_mode, targets[0]),
-                             (self.end_ball_mode, targets[1])):
-            index = combo.findData(value)
-            if index < 0:
-                continue
-            # guard against recursion: the combo boxes drive their own handler
-            combo.blockSignals(True)
-            combo.setCurrentIndex(index)
-            combo.blockSignals(False)
-        self._on_ball_mode_changed()
 
     def _on_ball_mode_changed(self, _index=None):
         """Show only the diameter fields the selected bump shapes need.
@@ -624,15 +566,25 @@ class WireBondTaskPanel:
               "(0.5 = symmetric). Expressions are accepted."))
         form.addRow(_("Peak Position Ratio"), self.peak_ratio)
 
-        self.rise_ratio = _ratio_field(
-            self.settings["rise_ratio"], decimals=3,
-            minimum=0.0, maximum=1.0, step=0.05, scroll_area=self._scroll)
-        form.addRow(_("Rise Height Ratio"), self.rise_ratio)
+        # Angles, not height ratios: 0 deg points along the line between the
+        # pads, 90 deg is perpendicular to it (straight up).
+        self.rise_angle = _angle_field(
+            self.settings["rise_angle"], decimals=1,
+            minimum=0.0, maximum=89.0, step=5.0, scroll_area=self._scroll)
+        self.rise_angle.setToolTip(
+            _("Angle at which the wire leaves the first pad, measured from the "
+              "line between the pads.\n0 deg = along that line towards the "
+              "second pad, 90 deg = perpendicular (straight up)."))
+        form.addRow(_("Rise Angle"), self.rise_angle)
 
-        self.fall_ratio = _ratio_field(
-            self.settings["fall_ratio"], decimals=3,
-            minimum=0.0, maximum=0.60, step=0.05, scroll_area=self._scroll)
-        form.addRow(_("Fall Height Ratio"), self.fall_ratio)
+        self.fall_angle = _angle_field(
+            self.settings["fall_angle"], decimals=1,
+            minimum=0.0, maximum=89.0, step=5.0, scroll_area=self._scroll)
+        self.fall_angle.setToolTip(
+            _("Angle at which the wire reaches the second pad, measured from "
+              "the line between the pads.\n0 deg = along that line towards the "
+              "first pad, 90 deg = perpendicular (straight up)."))
+        form.addRow(_("Fall Angle"), self.fall_angle)
 
         # How far from each pad the entry/exit control point sits. Together with
         # the rise/fall ratios it fixes the entry and exit angles.
@@ -648,17 +600,6 @@ class WireBondTaskPanel:
               "gives a steeper approach."))
         form.addRow(_("Lead Distance"), self.lead_distance)
 
-        # Length of the flat section on top of the loop.
-        self.top_length = _length_field(
-            self.settings.get("top_length", core.DEFAULT_TOP_LENGTH),
-            decimals=4, minimum=0.0, maximum=20.0, step=0.01,
-            scroll_area=self._scroll)
-        self.top_length.setToolTip(
-            _("Length of the flat top of the loop. Between the two lead-in "
-              "points the remaining span is shared, so a longer top means a "
-              "shorter but steeper descent."))
-        form.addRow(_("Top Length"), self.top_length)
-
         # --- bond bumps: one shape selector per bond point ---
         # C1 is the first bond point, C2 the second; they may use different
         # shapes (for example a ball on the chip and a wedge on the substrate).
@@ -673,9 +614,6 @@ class WireBondTaskPanel:
         self.end_ball_mode.setToolTip(
             _("Shape of the bump at the second bond point (C2)."))
         form.addRow(_("Bond Bump at C2"), self.end_ball_mode)
-
-        # kept as the single-shape accessor used elsewhere in the panel
-        self.ball_mode = self.start_ball_mode
 
         # Field labels are plain QLabels: the shrinkable _wrap_label() used for
         # the long notes would let the label column collapse to one character
@@ -741,17 +679,6 @@ class WireBondTaskPanel:
         self.show_centreline.setChecked(bool(self.settings["show_centreline"]))
         opt_layout.addWidget(self.show_centreline)
 
-        # The bump shape now lives in the combo box above; this checkbox is a
-        # quick "no bumps at all" switch kept in step with the combo box.
-        self.make_balls = QtWidgets.QCheckBox(_("Create bond balls"))
-        self.make_balls.setChecked(
-            core.BUMP_NONE not in self.selected_ball_modes())
-        self.make_balls.toggled.connect(self._on_make_balls_toggled)
-        self.make_balls.setToolTip(
-            _("Quick switch for \"no bumps\"; the shape is chosen under "
-              "Bond Bump in the parameters section."))
-        opt_layout.addWidget(self.make_balls)
-
         self.create_plane = QtWidgets.QCheckBox(
             _("Create the bisector helper plane (construction reference, hidden "
               "after creation; off by default)")
@@ -808,7 +735,6 @@ class WireBondTaskPanel:
         set_length_mm(self.ball_top_um, defaults["ball_top_diameter"])
         set_length_mm(self.ball_bottom_um, defaults["ball_bottom_diameter"])
         set_length_mm(self.lead_distance, defaults["lead_distance"])
-        set_length_mm(self.top_length, defaults["top_length"])
         for combo, key in ((self.start_ball_mode, "start_ball_mode"),
                            (self.end_ball_mode, "end_ball_mode")):
             index = combo.findData(defaults[key])
@@ -817,11 +743,10 @@ class WireBondTaskPanel:
         self._on_ball_mode_changed()
         set_quantity(self.plane_rotation_deg, defaults["plane_rotation"], "deg")
         set_number(self.peak_ratio, defaults["peak_ratio"])
-        set_number(self.rise_ratio, defaults["rise_ratio"])
-        set_number(self.fall_ratio, defaults["fall_ratio"])
+        set_quantity(self.rise_angle, defaults["rise_angle"], "deg")
+        set_quantity(self.fall_angle, defaults["fall_angle"], "deg")
         self.make_solid.setChecked(bool(defaults["make_solid"]))
         self.show_centreline.setChecked(bool(defaults["show_centreline"]))
-        self.make_balls.setChecked(bool(defaults["make_balls"]))
         self.create_plane.setChecked(bool(defaults["create_plane"]))
 
     # ------------------------------------------------------------------
@@ -865,20 +790,16 @@ class WireBondTaskPanel:
             wire.WireDiameter = "{} mm".format(current["wire_diameter"])
             wire.Clearance = "{} mm".format(current["clearance"])
             wire.PeakRatio = current["peak_ratio"]
-            wire.RiseRatio = current["rise_ratio"]
-            wire.FallRatio = current["fall_ratio"]
+            wire.RiseAngle = "{} deg".format(current["rise_angle"])
+            wire.FallAngle = "{} deg".format(current["fall_angle"])
             wire.MakeSolid = self.make_solid.isChecked()
             wire.ShowCentreline = self.show_centreline.isChecked()
-            wire.BallMode = current["ball_mode"]
-            wire.MakeBalls = current["make_balls"]
             wire.BallDiameter = "{} mm".format(current["ball_diameter"])
             if hasattr(wire, "StartBallMode"):
                 wire.StartBallMode = current["start_ball_mode"]
                 wire.EndBallMode = current["end_ball_mode"]
             if hasattr(wire, "LeadDistance"):
                 wire.LeadDistance = "{} mm".format(current["lead_distance"])
-            if hasattr(wire, "TopLength"):
-                wire.TopLength = "{} mm".format(current["top_length"])
             if hasattr(wire, "BallTopDiameter"):
                 wire.BallTopDiameter = "{} mm".format(
                     current["ball_top_diameter"])

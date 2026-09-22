@@ -1,4 +1,4 @@
-﻿# WireBonder 设计文档（PRD）
+# WireBonder 设计文档（PRD）
 
 > FreeCAD 打线（Wire Bonding）辅助插件 —— 由两个选中平面自动构造平分平面，并在其内生成连接两个质心的金线（打线弧）
 
@@ -105,7 +105,8 @@
 | FR-23 | **焊点凸起形状可选**：下拉框选择 无 / 球形 / 圆台；面板字段随选择动态显隐 | 中 | 已实现（v0.8.0） |
 | FR-24 | **两端形状可独立设置**：起点（C1）与终点（C2）各一个下拉框；面板按两端合并显示所需字段 | 中 | 已实现（v0.9.0） |
 | FR-25 | **进出线距离可设置**（默认 10 µm）：用绝对距离定位控制点 2 与 6，使进出线角度只由高度比例与该距离决定，与连线长度解耦 | 中 | 已实现（v0.9.0） |
-| FR-26 | **线形贴近真实打线轮廓**（平顶 + 长直下降）：8 个控制点，平顶由 3 点支撑，下降段中间点与两端共线使其成为真正的直线；新增「平顶长度」参数（默认 200 µm） | 高 | 已实现（v0.10.0） |
+| FR-26 | **线形贴近真实打线轮廓**（平顶 + 长直下降） | 高 | v0.10.0 实现，v0.11.0 由 FR-27 取代 |
+| FR-27 | **5 个控制点 + 角度参数**：A 起点 / B 上起点 / C 顶点 / D 上终点 / E 终点；进出线由 `RiseAngle`、`FallAngle`（以 A–E 连线为基准）与 `LeadDistance` 决定，取消高度比例与平顶长度参数 | 高 | 已实现（v0.11.0） |
 
 ### 4.1 FR-2 的几何定义（精确表述）
 
@@ -135,29 +136,30 @@ z' = Rot(x, θ) · z
 
 ### 4.2 FR-3 的打线弧轮廓
 
-弧线在局部坐标下的 **8 个**控制点（`L` 为连线长度，`H` 为净空高度，`p` 为平顶位置比例，
-`top` 为平顶长度）：
+弧线在局部坐标下的 **5 个**控制点 A–E（`L` 为连线长度，`H` 为净空高度，
+`p` 为顶点位置比例，`θR`/`θF` 为出线/落线角度，`lead` 为进出线距离）：
 
-| 序号 | u 坐标 | v（高度） | 作用 |
+| 点 | 名称 | u 坐标 | v（高度） |
 | --- | --- | --- | --- |
-| 1 | `0` | `0` | 第一焊点（C1） |
-| 2 | `lead`（进出线距离，默认 10 µm） | `rise·H` | 出线点，模拟劈刀抬起 |
-| 3 | `p·L − top/2` | `H` | **平顶起点** |
-| 4 | `p·L` | `H` | **平顶中点** |
-| 5 | `p·L + top/2` | `H` | **平顶终点** |
-| 6 | 5 与 7 的中点 | 落在 5→7 直线上 | 下降段中点（**与两端共线**） |
-| 7 | `L − lead`（进出线距离） | `fall·H` | 落线点 |
-| 8 | `L` | `0` | 第二焊点（C2） |
+| **A** | 起点（第一焊盘） | `0` | `0` |
+| **B** | 上起点 | `lead · cos θR` | `lead · sin θR` |
+| **C** | 顶点 | `p · L` | `H` |
+| **D** | 上终点 | `L − lead · cos θF` | `lead · sin θF` |
+| **E** | 终点（第二焊盘） | `L` | `0` |
 
-控制点经 `Part.BSplineCurve.interpolate()` 插值成**穿过所有控制点**的平滑样条；随后映射回三维：`P(u, v) = C1 + u·x + v·y`。
+`θR` 与 `θF` 均以 **A–E 连线**为基准（0° 指向另一焊盘，90° 垂直于连线）。
+详细定义见 [`spline-ctrl-points.md`](spline-ctrl-points.md)。
 
-> 形状系数集中在 `core.py` 顶部的 `RISE_POSITION` / `MID_RISE_POSITION` / `DESCENT_POSITION` /
-> `FALL_POSITION` 等常量中，便于与参数文档、绘图脚本保持同步。
+控制点经 `Part.BSplineCurve.interpolate()` 插值成**穿过所有控制点**的平滑样条；随后映射回三维：`P(u, v) = A + u·x + v·y`。
+
+> **为什么是 5 个点**：控制点越少参数越直观、样条过冲越小（顶点高度误差仅
+> **+0.0%~+0.8%**）。代价是**没有真正的平顶**（顶点附近为圆弧过渡，顶部 2% 以内约
+> 110–160 µm），且**下降段外凸约 14%** —— 因为 C 与 E 之间只有一个控制点 D。
+> 历史：v0.10.0 曾用 8 点实现"平顶 + 直线下降"，但参数间耦合较强；
+> v0.11.0 按 [`spline-ctrl-points.md`](spline-ctrl-points.md) 的规范改为 5 点 + 角度参数。
 >
-> **为什么是 7 个点**：早期用 8 个点、落线点取 `p·L + 0.92·tail`，末段过短过陡，
-> 插值样条会越过 C2 折回（实测 `p = 0.80` 时过冲 0.024 mm）。把落线点前移到
-> `0.78·tail` 后末段坡度由 1.56–6.25 降到 0.57–2.27，**过冲完全消除**；
-> 代价是落线不再垂直（`p = 0.42` 时约 +48°），可用「落线高度比例」调节。
+> **角度上限 89°**：恰好 90° 时 `cos = 0`，B/D 的 `u` 将与 A/E 重合，
+> 破坏样条要求的"参数严格递增"。
 
 **不变量**：
 
@@ -291,17 +293,14 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 | `Face2` | `App::PropertyLinkSub` | — | — | 第二个面 |
 | `WireDiameter` | `App::PropertyLength` | 0.02 | mm | 金线直径（20 µm） |
 | `Clearance` | `App::PropertyLength` | 0.5 | mm | 净空高度（弧顶相对连线），即 **500 µm** |
-| `PeakRatio` | `App::PropertyFloat` | 0.42 | — | 拱顶位置占连线长度比例（0.05–0.95） |
-| `RiseRatio` | `App::PropertyFloat` | 0.60 | — | 出线陡升点高度比例（0–1） |
-| `FallRatio` | `App::PropertyFloat` | 0.20 | — | 落线高度比例（0–0.6） |
+| `PeakRatio` | `App::PropertyFloat` | 0.42 | — | 顶点位置占连线长度比例（0.05–0.95） |
+| `RiseAngle` | `App::PropertyAngle` | 75 | deg | 出线角度，以 A–E 连线为基准（0–89°） |
+| `FallAngle` | `App::PropertyAngle` | 20 | deg | 落线角度，以 A–E 连线为基准（0–89°） |
 | `MakeSolid` | `App::PropertyBool` | False | — | 是否生成金线实体 |
 | `ShowCentreline` | `App::PropertyBool` | True | — | 是否同时显示中心线 |
-| `MakeBalls` | `App::PropertyBool` | True | — | 是否生成焊球 |
-| `BallMode` | `App::PropertyEnumeration` | `sphere` | — | 凸起形状（旧属性，两端相同时有效）：`none` / `sphere` / `frustum` |
 | `StartBallMode` | `App::PropertyEnumeration` | `sphere` | — | C1 处的凸起形状 |
 | `EndBallMode` | `App::PropertyEnumeration` | `sphere` | — | C2 处的凸起形状 |
-| `LeadDistance` | `App::PropertyLength` | 0.01 | mm | 焊盘到进出线控制点的水平距离（**10 µm**） |
-| `TopLength` | `App::PropertyLength` | 0.20 | mm | 平顶平直段长度（**200 µm**） |
+| `LeadDistance` | `App::PropertyLength` | 0.03 | mm | 焊盘到控制点 B / D 的距离，沿出线/落线射线测量（**30 µm**） |
 | `BallDiameter` | `App::PropertyLength` | 0.05 | mm | 球径（球形）或凸点高度（圆台） |
 | `BallTopDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台远离焊盘一端的直径 |
 | `BallBottomDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台贴着焊盘一端的直径 |
@@ -311,7 +310,7 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 
 | 条件 | Shape |
 | --- | --- |
-| `MakeSolid=False`（默认） | 中心线 `Wire`（若 `MakeBalls=True` 则为含球体的 `Compound`） |
+| `MakeSolid=False`（默认） | 中心线 `Wire`（若两端焊球形状不为 `none` 则为含凸起的 `Compound`） |
 | `MakeSolid=True` | `Compound([Solid, (中心线), (焊球…)])` |
 
 ### 7.2 `WireBondPlane`（Part::FeaturePython）
@@ -479,7 +478,7 @@ face_global = face.transformed(extra.toMatrix())
 | T-5 | 金线实体体积 | 直径 2 mm 标定件 | 324.3232 vs 理论 324.32 mm³ |
 | T-6 | 焊球体积 | 直径 100 µm | `0.0005235988 mm³`，与 `4/3πr³` 一致 |
 | T-7 | 焊球位置 | 球心坐标 | 精确落在两个面质心 |
-| T-8 | 关闭焊球 | `MakeBalls=False` | 实体数 2 → 0 |
+| T-8 | 关闭焊球 | `StartBallMode=EndBallMode=none` | 实体数 2 → 0 |
 | T-9 | 命令注册 | `Gui.listCommands()` | `['WireBonder_CreatePlane', 'WireBonder_CreateWireBond']` |
 | T-10 | 工作台注册 | `Gui.listWorkbenches()` | `WireBonderWorkbench` 存在，图标路径有效 |
 | T-11 | 真实启动加载 | `FreeCAD.exe --log-file` | `Initializing ...\WireBonder\.\... done` + `addWorkbench OK` |
@@ -543,7 +542,7 @@ face_global = face.transformed(extra.toMatrix())
 | --- | --- |
 | 存储位置 | `User parameter:BaseApp/Preferences/Mod/WireBonder`（FreeCAD 用户参数，**不写入 .FCStd**） |
 | 触发时机 | 面板点 **OK** 成功后写入；面板构造时读取并回填 |
-| 持久化字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `PlaneRotation` / `PeakRatio` / `RiseRatio` / `FallRatio` / `MakeSolid` / `ShowCentreline` / `MakeBalls` / `CreatePlane`（长度以 mm 存储，面板负责 µm 换算） |
+| 持久化字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `PlaneRotation` / `PeakRatio` / `RiseAngle` / `FallAngle` / `LeadDistance` / `MakeSolid` / `ShowCentreline` / `StartBallMode` / `EndBallMode` / `CreatePlane`（长度以 mm 存储，面板负责 µm 换算） |
 | 读取兜底 | 逐项独立读取，缺失或类型异常时回退到 `core` 中的内置默认值；`Settings.load_checked()` 还会把值夹到面板控件的合法区间，防止手工改坏参数后界面出现异常值 |
 | 重置方式 | 面板底部 **恢复默认值** 按钮（同时清空存储），或 `Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder` |
 | 注意事项 | `ParamGet` 按类型分别存储，删除必须用对应方法（数值 `RemFloat`、布尔 `RemBool`）；用 `RemString` 删数值会静默失败 |
@@ -637,3 +636,5 @@ face_global = face.transformed(extra.toMatrix())
 | v0.9.1 | 2026-09-22 | **修正面板字段标签**。① 字段标签不再使用可收缩的 `_wrap_label()`（它是给长注释用的，会把标签列压到一行一个字），改用普通 `QLabel`；实测标签恢复为 58×31 px 单行；② 标签精简为「上底直径」「下底直径」（原「圆台上底直径」过长）。这是 v0.9.0 引入两个下拉框后暴露的显示问题 |
 | v0.10.0 | 2026-09-22 | **线形改为真实打线轮廓（平顶 + 长直下降）**，依据 `data/wire-sketch.png` 与 `data/sketch-params.png`。控制点由 7 个改为 **8 个**：平顶由 **3 个点**支撑（此前 2 点，样条在过渡处上拱，实测最高点超出设定净空 **6.8%**，3 点后降到 **1.8%**，使「净空高度」参数可信）；下降段中间点**与两端共线**，利用三点共线使自然样条二阶导数为零的性质让下降段成为**真正的直线**（实测偏离直线 RMS 约 3 um）。新增参数 `TopLength`（平顶长度，默认 **200 µm**，贴近参考图的 `0.3·L`，自动夹紧到跨度的 45%）；`FallRatio` 默认由 0.20 改为 **0.12** 以进一步压平下降段。新增两个对照/扫描脚本：`scripts/compare_profile.py`（按参考图比例出图并打印平顶跨度、下降斜率、偏离直线比例）与 `scripts/scan_top_length.py`（平顶长度 x 跨度网格扫描） |
 | v0.10.1 | 2026-09-22 | **修复两个缺陷并改善报错可诊断性**。① 平顶平台未受峰值位置约束：`u3 = peak_u − top/2` 在 `peak_ratio` 较小（如 0.05）或较大（0.90）时会落到 C1 之前/落线点之后，使 8 个控制点的 u 不再递增（实测 1680 组参数中有 421 组非法，最坏情况出现 `u3 = 0` 甚至负值）。改为**双侧夹紧**：`half_top = min(top/2, 0.45L/2, min(peak_u − lead, (L − lead) − peak_u) × 0.98)`，取两侧可用空间较小者并留 2% 余量；复测 **1680 组全部合法**。② `_restore_defaults()` 中 `LeadDistance` 被重复设置了一行（插入新字段时的冗余），已清理。③ `accept()` 的异常分支现在把完整调用栈写入 Report view（此前只弹一句异常文字，难以定位）；报错文案相应更新 |
+| v0.11.0 | 2026-09-22 | **按规范改为 5 个控制点 + 角度参数**（规范见 [`spline-ctrl-points.md`](spline-ctrl-points.md)）。控制点 A 起点 / B 上起点 / C 顶点 / D 上终点 / E 终点：`B = A + lead·(cos θR, sin θR)`、`D = E − lead·(cos θF, −sin θF)`，`C = (p·L, H)`。`RiseRatio`/`FallRatio`（高度比例）改为 **`RiseAngle`/`FallAngle`（`App::PropertyAngle`，以 A–E 连线为基准，0° 指向另一焊盘、90° 垂直于连线）**，默认 **75°/20°**；`LeadDistance` 默认由 10 µm 改为 **30 µm**；删除 `TopLength`。实测顶点高度误差仅 **+0.0%~+0.8%**，`AB = ED = LeadDistance` 精确成立；代价是平台宽度降至 110–160 µm、下降段外凸约 14%（5 点的固有限制）。角度上限 89° 以保证控制点 u 严格递增；`lead·cos θ` 过大时自动夹紧。新增 `scripts/scan_angles.py` 用于角度/距离扫描 |
+| v0.12.0 | 2026-09-22 | **彻底移除旧的两端焊球参数**。面板去掉「生成焊球」复选框，对象不再创建 `MakeBalls` 与 `BallMode` 两个属性（各端的 `StartBallMode`/`EndBallMode` 已完全覆盖其功能）。`compute_from_faces()` 去掉 `make_balls` 与 `ball_mode` 兼容参数，改由两端参数直接决定。**顺带修复一个真实缺陷**：OCC 的 `BRepPrimAPI_MakeCone` 不接受上下底半径相等（抛 `creation of cone failed`），而两个直径默认都取自 `BallDiameter`，因此「选圆台但不改直径」必然创建失败；现改为等半径时调用 `makeCylinder`。修复后 9 种两端形状组合全部通过。旧文档中这两个属性读取时会消失，不影响几何 |
