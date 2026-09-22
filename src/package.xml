@@ -2,7 +2,7 @@
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
   <name>WireBonder</name>
   <description>Wire bonding helper: build the bisector plane of two selected faces and sweep a gold wire (configurable diameter and clearance) along the loop profile between the two face centroids.</description>
-  <version>0.4.0</version>
+  <version>0.6.0</version>
   <date>2026-09-21</date>
   <maintainer email="noreply@example.com">Edison</maintainer>
   <license>LGPL-2.1-or-later</license>

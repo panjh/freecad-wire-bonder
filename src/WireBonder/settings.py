@@ -40,10 +40,22 @@ _SPEC = {
     "show_centreline": ("ShowCentreline", True),
     "make_balls": ("MakeBalls", True),
     "create_plane": ("CreatePlane", False),
+    # UI state: which panel sections are expanded (not a geometry parameter)
+    "ui_show_faces": ("UiShowFaces", True),
+    "ui_show_params": ("UiShowParams", True),
+    "ui_show_options": ("UiShowOptions", True),
 }
 
 #: keys whose values are booleans
-_BOOLEAN_KEYS = ("make_solid", "show_centreline", "make_balls", "create_plane")
+_BOOLEAN_KEYS = (
+    "make_solid",
+    "show_centreline",
+    "make_balls",
+    "create_plane",
+    "ui_show_faces",
+    "ui_show_params",
+    "ui_show_options",
+)
 
 
 def _open_params():
@@ -150,8 +162,21 @@ def load_defaults():
 def save_defaults(**values):
     """Store the given ``key=value`` pairs (see :data:`_SPEC` for valid keys).
 
-    Values not given are left untouched, so the panel can save as it goes.
+    Keys not given are left untouched, so callers can persist incrementally.
     """
+    return _store(values)
+
+
+def save_ui_state(**values):
+    """Persist the panel layout state (which sections are expanded).
+
+    Kept separate from :func:`save_defaults` so that the *built-in defaults*
+    button does not silently reset the user's panel layout.
+    """
+    return _store({k: v for k, v in values.items() if k.startswith("ui_")})
+
+
+def _store(values):
     params = _open_params()
     if params is None:
         return False

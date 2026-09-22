@@ -99,6 +99,8 @@
 | FR-17 | **多语言**：界面文字跟随 FreeCAD 语言设置，中文环境显示中文，**其它语言（含英文）显示英文**；未翻译条目回退英文 | 中 | 已实现（v0.2.0） |
 | FR-18 | 切换语言**无需重启**：偏好设置改语言后工作台名、工具栏/菜单按钮、面板立即随之切换 | 中 | 已实现（v0.3.0） |
 | FR-19 | **面板记住上次设置**：OK 后持久化，下次打开自动回填；提供「恢复默认值」 | 中 | 已实现（v0.4.0） |
+| FR-20 | **面板可滚动**：内容超出可用高度时出现垂直滚动条，任何控件不被截断；宽度自适应，不出现横向滚动条 | 中 | 已实现（v0.5.0） |
+| FR-21 | **分组可折叠**：选中的平面 / 金线参数 / 输出选项三个分组点击标题即可折叠，折叠状态被记住且独立于「恢复默认值」 | 中 | 已实现（v0.5.0） |
 
 ### 4.1 FR-2 的几何定义（精确表述）
 
@@ -128,7 +130,8 @@ z' = Rot(x, θ) · z
 
 ### 4.2 FR-3 的打线弧轮廓
 
-弧线在局部坐标下的控制点（`L` 为连线长度，`H` 为净空高度，`p` 为拱顶位置比例）：
+弧线在局部坐标下的 **7 个**控制点（`L` 为连线长度，`H` 为净空高度，`p` 为拱顶位置比例，
+`tail = L − p·L`）——弧顶居中，左右各 3 个点：
 
 | 序号 | u 坐标 | v（高度） | 作用 |
 | --- | --- | --- | --- |
@@ -136,12 +139,19 @@ z' = Rot(x, θ) · z
 | 2 | `0.12·p·L` | `rise·H` | 出线陡升，模拟劈刀抬起 |
 | 3 | `0.50·p·L` | `0.92·H` | 上升段 |
 | 4 | `p·L` | `H` | **弧顶** |
-| 5 | `p·L + 0.35·(L-p·L)` | `0.88·H` | 下降段 |
-| 6 | `p·L + 0.70·(L-p·L)` | `0.50·H` | 下降段 |
-| 7 | `p·L + 0.92·(L-p·L)` | `fall·H` | 落线姿态 |
-| 8 | `L` | `0` | 第二焊点（C2） |
+| 5 | `p·L + 0.38·tail` | `0.86·H` | 下降段 |
+| 6 | `p·L + 0.78·tail` | `fall·H` | 落线姿态 |
+| 7 | `L` | `0` | 第二焊点（C2） |
 
 控制点经 `Part.BSplineCurve.interpolate()` 插值成**穿过所有控制点**的平滑样条；随后映射回三维：`P(u, v) = C1 + u·x + v·y`。
+
+> 形状系数集中在 `core.py` 顶部的 `RISE_POSITION` / `MID_RISE_POSITION` / `DESCENT_POSITION` /
+> `FALL_POSITION` 等常量中，便于与参数文档、绘图脚本保持同步。
+>
+> **为什么是 7 个点**：早期用 8 个点、落线点取 `p·L + 0.92·tail`，末段过短过陡，
+> 插值样条会越过 C2 折回（实测 `p = 0.80` 时过冲 0.024 mm）。把落线点前移到
+> `0.78·tail` 后末段坡度由 1.56–6.25 降到 0.57–2.27，**过冲完全消除**；
+> 代价是落线不再垂直（`p = 0.42` 时约 +48°），可用「落线高度比例」调节。
 
 **不变量**：
 
@@ -494,6 +504,7 @@ face_global = face.transformed(extra.toMatrix())
 | --- | --- | --- |
 | 细直径放样慢 | 20 µm × 100 mm 约 1 分钟 | 减小路径采样、调整放样容差；或后台线程中生成 |
 | 净空高度定义 | 为"弧顶相对两质心连线的高度"，不是相对元器件表面 | 增加"以指定基准面/平面为参考"的选项 |
+| 落线角度偏斜 | 为保证不过冲，落线点前移到 `0.78·tail`，末段变长变缓，到达 C2 时不再垂直（`PeakRatio = 0.42` 约 +48°）；`PeakRatio = 0.20/0.42/0.60/0.80` 分别约 +57°/+48°/+38°/+25° | 把落线点位置也做成参数（如 `FallPositionRatio`），让用户在"垂直落线"与"无过冲"之间权衡 |
 | 单根金线 | 一次只生成一根 | 支持多面选择批量生成、或阵列（Array）参数化 |
 | 弧线形状 | 单一 loop profile | 增加 BS / BSS / SSB 等工艺预置 profile |
 | 实体与中心线同色 | `Compound` 内只能一种颜色 | 拆成独立对象或使用 ViewProvider 自定义绘制 |
@@ -562,7 +573,23 @@ face_global = face.transformed(extra.toMatrix())
 * 语言在**加载时确定**（`language()` 带缓存），运行中修改 FreeCAD 语言需重启 FreeCAD 才能切换界面。
 * 英文词条没有独立表，直接复用 msgid，因此英文文案以源码中的写法为准。
 
-## 16. 附录
+## 16. 文档配图工具
+
+参数文档 [`parameters.md`](parameters.md) 的示意图由 `scripts/` 下的独立脚本生成，**不依赖 FreeCAD**：
+
+| 脚本 | 输出 | 说明 |
+| --- | --- | --- |
+| [`scripts/plot_peak_ratio.py`](../scripts/plot_peak_ratio.py) | `docs/images/peak-ratio.png` | 四个 `PeakRatio` 取值下的弧线形态对比：复用与 `core.loop_profile()` 完全相同的控制点公式，再用弦长参数化的三次样条平滑，模拟 `Part.BSplineCurve.interpolate()` 的行为 |
+
+实现要点：
+
+- 仅依赖 **matplotlib + numpy**（自然三次样条用 Thomas 算法自行实现，避免引入 SciPy）；
+- 字体自动挑选可用中文字体（Microsoft YaHei / SimHei / Noto Sans CJK …），缺失时回退；
+- **必须使用参数化样条**：若把 `v` 当作 `u` 的函数插值，样条会在控制点之间明显过冲（实测最高 5%），
+  会错误地暗示线弧高于净空高度；参数化后过冲降至 3.5% 以内，与 FreeCAD 中的实际几何一致；
+- 脚本同时把表格所需数值打印到标准输出，便于核对文档中的数据。
+
+## 17. 附录
 
 ### 14.1 关键 FreeCAD API
 
@@ -589,3 +616,5 @@ face_global = face.transformed(extra.toMatrix())
 | v0.2.0 | 2026-09-22 | 新增**多语言支持**（`WireBonder/i18n.py`）：跟随 FreeCAD 语言设置，中文显示中文、其它语言回退英文；`InitGui` / `commands` / `taskpanel` / `features` / `core` 的用户可见文案全部走 `_()`；启动日志新增 `language = zh/en` 记录 |
 | v0.3.0 | 2026-09-22 | **切换语言无需重启**（`WireBonder/language_monitor.py`）：同时监视 `Language` 用户参数与 `FreeCADGui.getLocale()`，变化即刷新 i18n 缓存、调用 `setLocale()` 同步 GUI、重新注册工作台，并用 `QTimer.singleShot(0, ...)` 延后重设 QAction 文字（FreeCAD 处理 `LanguageChange` 时会覆盖） |
 | v0.4.0 | 2026-09-22 | 新增**面板参数持久化**（`WireBonder/settings.py`）：OK 后把 11 项参数写入 `User parameter:BaseApp/Preferences/Mod/WireBonder`，下次打开面板自动回填；新增「恢复默认值」按钮；注意 `ParamGet` 数值/布尔需分别用 `RemFloat` / `RemBool` 删除 |
+| v0.5.0 | 2026-09-22 | **面板可滚动 + 分组可折叠**：外层套 `QScrollArea`（`setWidgetResizable(True)`，禁用横向滚动条）；新增 `CollapsibleBox` 取代 `QGroupBox`（`QGroupBox` 的 checkable 只能禁用内容、无法隐藏）；折叠状态持久化为 `ui_show_*` 并与几何参数分开保存。规避两个 Qt 陷阱：自动换行 `QLabel` 的 `minimumSizeHint` 等于最长单词宽度会撑宽面板，需 `setMinimumWidth(1)`；`setChecked()` 发出的 `toggled` 信号会与程序化状态更新互相递归，需 `blockSignals` 隔离 |
+| v0.6.0 | 2026-09-22 | **打线弧控制点由 8 个减为 7 个**（弧顶居中、左右各 3 个）：取消原第 6 个下降点，落线点由 `0.92·tail` 前移至 `0.78·tail`，末段坡度从 1.56–6.25 降到 0.57–2.27，**越过 C2 的过冲完全消除**（原 8 点方案在 `PeakRatio = 0.60/0.80` 时分别为 0.00575/0.02416 mm）。形状系数抽为 `RISE_POSITION` / `MID_RISE_POSITION` / `DESCENT_POSITION` / `FALL_POSITION` 等模块常量，并与 `scripts/plot_peak_ratio.py`、参数文档保持一致。代价：落线不再垂直（`PeakRatio = 0.42` 约 +48°），可用「落线高度比例」调节 |

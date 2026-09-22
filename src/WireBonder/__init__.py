@@ -11,7 +11,7 @@ Select any two faces and the addon will
 The wire diameter and the clearance stay fully parametric.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 __all__ = [
     "core",
     "features",

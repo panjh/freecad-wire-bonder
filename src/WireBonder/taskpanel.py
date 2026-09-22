@@ -13,8 +13,153 @@ from . import core, features, settings
 from .i18n import translate as _
 
 
+def _enum(group, name, fallback):
+    """Look up a Qt enum member tolerating both PySide2 and PySide6 spellings.
+
+    PySide2 exposes only the scoped form (``Qt.ScrollBarPolicy.ScrollBarAlwaysOff``)
+    while PySide6 additionally provides the short form (``Qt.ScrollBarAlwaysOff``);
+    the enum *values* are identical in both, so the numeric fallback is used when
+    neither attribute exists.
+    """
+    scoped = getattr(getattr(QtCore.Qt, group, None), name, None)
+    if scoped is not None:
+        return scoped
+    short = getattr(QtCore.Qt, name, None)
+    if short is not None:
+        return short
+    return fallback
+
+
+def _policy(name, fallback):
+    """Shorthand for the ``Qt.ScrollBarPolicy`` group."""
+    return _enum("ScrollBarPolicy", name, fallback)
+
+
+def _fmt_number(value):
+    """Format a coordinate compactly.
+
+    A datum plane (``App::Plane``) is unbounded and reports ``1e100``-style
+    coordinates; printing those with ``{:.2f}`` produces a number over a hundred
+    characters long, which would stretch the panel far beyond the window. Large
+    magnitudes are therefore shown in exponential notation.
+    """
+    try:
+        number = float(value)
+    except Exception:
+        return "?"
+    if abs(number) >= 1e6:
+        return "{:.3g}".format(number)
+    return "{:.2f}".format(number)
+
+
 def _fmt_vector(vec):
-    return "({:.2f}, {:.2f}, {:.2f})".format(vec.x, vec.y, vec.z)
+    return "({}, {}, {})".format(
+        _fmt_number(vec.x), _fmt_number(vec.y), _fmt_number(vec.z)
+    )
+
+
+def _wrap_label(text=""):
+    """Create a word-wrapped label that can actually shrink.
+
+    A wrapped ``QLabel`` reports a ``minimumSizeHint`` equal to its longest
+    word, so long numbers or sentences would force the whole panel wider than
+    the available space; with the horizontal scrollbar disabled that would clip
+    the right hand side. Allowing the label to shrink to one pixel makes it wrap
+    instead.
+    """
+    label = QtWidgets.QLabel(text)
+    label.setWordWrap(True)
+    label.setMinimumWidth(1)
+    return label
+
+
+class CollapsibleBox(QtWidgets.QWidget):
+    """A group box whose content can be collapsed by clicking its title.
+
+    ``QGroupBox`` cannot do this: making it checkable only *disables* the
+    content instead of hiding it. This widget is a plain ``QWidget`` with a
+    checkable ``QToolButton`` as the title bar.
+
+    Qt enumerations are deliberately avoided (the collapse indicator is a text
+    prefix and no arrow type or tool-button style is set), because PySide2 and
+    PySide6 disagree about the short versus scoped enum forms.
+    """
+
+    _EXPANDED_MARK = "\u25be"    # small down triangle
+    _COLLAPSED_MARK = "\u25b8"   # small right triangle
+
+    def __init__(self, title, expanded=True, parent=None):
+        super().__init__(parent)
+        self._title = title
+        #: optional callback(expanded) invoked on user interaction only
+        self._on_state_changed = None
+
+        self.toggle = QtWidgets.QToolButton(self)
+        self.toggle.setCheckable(True)
+        self.toggle.setAutoRaise(True)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: bold; }"
+        )
+        self.toggle.toggled.connect(self._on_toggled)
+
+        self.body = QtWidgets.QWidget(self)
+        self.content_layout = QtWidgets.QVBoxLayout(self.body)
+        self.content_layout.setContentsMargins(8, 2, 2, 4)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(1)
+        layout.addWidget(self.toggle)
+        layout.addWidget(self.body)
+
+        self._apply_state(bool(expanded), notify=False)
+
+    # ------------------------------------------------------------------
+    def _apply_state(self, expanded, notify=True):
+        """Update the visual state without letting the toggle signal recurse.
+
+        ``setChecked`` emits ``toggled``, which is connected to ``_on_toggled``;
+        blocking the signal here keeps programmatic updates (construction,
+        restore-defaults) from re-entering the toggle handler.
+        """
+        mark = self._EXPANDED_MARK if expanded else self._COLLAPSED_MARK
+        self.toggle.setText("{} {}".format(mark, self._title))
+        self.toggle.setToolTip(self._title)
+
+        previous = self.toggle.blockSignals(True)
+        try:
+            self.toggle.setChecked(expanded)
+        except Exception:
+            pass
+        finally:
+            self.toggle.blockSignals(previous)
+
+        self.body.setVisible(expanded)
+        self.updateGeometry()
+
+        if notify and self._on_state_changed is not None:
+            self._on_state_changed(bool(expanded))
+
+    def _on_toggled(self, checked):
+        """User clicked the title: apply and notify."""
+        mark = self._EXPANDED_MARK if checked else self._COLLAPSED_MARK
+        self.toggle.setText("{} {}".format(mark, self._title))
+        self.body.setVisible(checked)
+        self.updateGeometry()
+        if self._on_state_changed is not None:
+            self._on_state_changed(bool(checked))
+
+    def is_expanded(self):
+        # authoritative source is the toggle, not isVisible(): a parent that is
+        # itself hidden would make isVisible() report False for every child
+        return bool(self.toggle.isChecked())
+
+    def set_expanded(self, expanded):
+        self._apply_state(bool(expanded), notify=False)
+
+    def set_callback(self, callback):
+        """Register ``callback(expanded)``, used to persist the UI state."""
+        self._on_state_changed = callback
 
 
 def containing_body(obj):
@@ -67,14 +212,55 @@ class WireBondTaskPanel:
             "create_plane": self.create_plane.isChecked(),
         }
 
+    def collect_ui_state(self):
+        """Return which panel sections are currently expanded."""
+        return {
+            "ui_show_faces": self.section_faces.is_expanded(),
+            "ui_show_params": self.section_params.is_expanded(),
+            "ui_show_options": self.section_options.is_expanded(),
+        }
+
+    def _on_section_toggled(self, _expanded=None):
+        """Persist the section layout immediately.
+
+        Collapsing a section is a layout action, not a parameter edit, so it is
+        stored right away instead of waiting for OK - otherwise a user who only
+        collapses a section and cancels would not get it remembered.
+        """
+        try:
+            settings.save_ui_state(**self.collect_ui_state())
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
     def _build_ui(self):
-        layout = QtWidgets.QVBoxLayout(self.form)
+        # The panel can exceed the available height; everything scrolls inside
+        # a QScrollArea so no control is ever cut off.
+        outer = QtWidgets.QVBoxLayout(self.form)
+        outer.setContentsMargins(0, 0, 0, 0)
 
-        info = QtWidgets.QGroupBox(_("Selected Faces"))
+        scroll = QtWidgets.QScrollArea(self.form)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(_policy("ScrollBarAlwaysOff", 1))
+        content = QtWidgets.QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+
+        # --- section: selected faces (collapsible) ---
+        self.section_faces = CollapsibleBox(
+            _("Selected Faces"), bool(self.settings["ui_show_faces"])
+        )
+        self.section_faces.set_callback(self._on_section_toggled)
+        info = QtWidgets.QWidget()
         info_layout = QtWidgets.QFormLayout(info)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        self.section_faces.content_layout.addWidget(info)
         centres = []
         for index, (obj, sub) in enumerate(self.selection, start=1):
             text = "{} : {}".format(obj.Label, sub)
@@ -91,19 +277,17 @@ class WireBondTaskPanel:
                 ).format(_fmt_vector(centre), _fmt_vector(normal))
             except Exception as exc:
                 text += "\n" + _("(cannot resolve: {})").format(exc)
-            label = QtWidgets.QLabel(text)
-            label.setWordWrap(True)
+            label = _wrap_label(text)
             info_layout.addRow(_("Face {}").format(index), label)
 
         span = None
         if len(centres) == 2:
             span = (centres[1] - centres[0]).Length
-            span_label = QtWidgets.QLabel(
+            span_label = _wrap_label(
                 _("Centroid distance L = {:.3f} mm").format(span)
             )
-            span_label.setWordWrap(True)
             info_layout.addRow(_("Span"), span_label)
-        layout.addWidget(info)
+        layout.addWidget(self.section_faces)
 
         body_names = []
         for obj, _sub in self.selection:
@@ -111,7 +295,7 @@ class WireBondTaskPanel:
             if body is not None and body.Name not in body_names:
                 body_names.append(body.Name)
         if body_names:
-            scope_note = QtWidgets.QLabel(
+            scope_note = _wrap_label(
                 _("Note: the selected faces are inside the PartDesign Body "
                   "({}). The wire object is created outside of the Body, so "
                   "FreeCAD reports\n\"Link(s) ... go out of the allowed scope\" "
@@ -119,12 +303,18 @@ class WireBondTaskPanel:
                   "geometry. To get rid of it, model the pads with the Part "
                   "workbench (Part::Box, etc.).").format(", ".join(body_names))
             )
-            scope_note.setWordWrap(True)
             scope_note.setStyleSheet("color: #B26500;")
             layout.addWidget(scope_note)
 
-        params = QtWidgets.QGroupBox(_("Wire Parameters"))
+        # --- section: wire parameters (collapsible) ---
+        self.section_params = CollapsibleBox(
+            _("Wire Parameters"), bool(self.settings["ui_show_params"])
+        )
+        self.section_params.set_callback(self._on_section_toggled)
+        params = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(params)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.section_params.content_layout.addWidget(params)
 
         self.diameter_um = QtWidgets.QDoubleSpinBox()
         self.diameter_um.setDecimals(2)
@@ -181,10 +371,17 @@ class WireBondTaskPanel:
         self.ball_diameter_um.setSuffix(" µm")
         form.addRow(_("Bond Ball Diameter"), self.ball_diameter_um)
 
-        layout.addWidget(params)
+        layout.addWidget(self.section_params)
 
-        options = QtWidgets.QGroupBox(_("Output Options"))
+        # --- section: output options (collapsible) ---
+        self.section_options = CollapsibleBox(
+            _("Output Options"), bool(self.settings["ui_show_options"])
+        )
+        self.section_options.set_callback(self._on_section_toggled)
+        options = QtWidgets.QWidget()
         opt_layout = QtWidgets.QVBoxLayout(options)
+        opt_layout.setContentsMargins(0, 0, 0, 0)
+        self.section_options.content_layout.addWidget(options)
 
         self.make_solid = QtWidgets.QCheckBox(
             _("Create the gold wire solid (slower for small diameters)")
@@ -207,10 +404,10 @@ class WireBondTaskPanel:
         self.create_plane.setChecked(bool(self.settings["create_plane"]))
         opt_layout.addWidget(self.create_plane)
 
-        layout.addWidget(options)
+        layout.addWidget(self.section_options)
 
         if span is not None and self.clearance_um.value() / 1000.0 > span:
-            span_note = QtWidgets.QLabel(
+            span_note = _wrap_label(
                 _("Note: the clearance ({:.0f} um) is larger than the centroid "
                   "distance ({:.0f} um);\nthe loop will look exaggerated - "
                   "consider reducing the clearance.").format(
@@ -218,7 +415,6 @@ class WireBondTaskPanel:
                 )
             )
             span_note.setStyleSheet("color: #B26500;")
-            span_note.setWordWrap(True)
             layout.addWidget(span_note)
 
         # The panel remembers the last used values; offer a way back to the
@@ -231,14 +427,15 @@ class WireBondTaskPanel:
         self.restore_button.clicked.connect(self._restore_defaults)
         layout.addWidget(self.restore_button)
 
-        hint = QtWidgets.QLabel(
+        hint = _wrap_label(
             _("Note: a 20 um gold wire is usually invisible at assembly scale, "
               "so only the centreline is generated by default;\n"
               "enable \"Create the gold wire solid\" to get a solid with the "
               "real diameter.\n"
               "The bisector helper plane is only a construction reference; it "
               "is hidden after creation and can be shown from the tree.\n"
-              "The panel reopens with the values used last time.")
+              "The panel reopens with the values used last time;\n"
+              "click a section title to collapse or expand it.")
         )
         hint.setStyleSheet("color: gray;")
         layout.addWidget(hint)
@@ -333,6 +530,7 @@ class WireBondTaskPanel:
 
         # Remember what was used, so the next panel opens with the same values.
         settings.save_defaults(**self.collect_settings())
+        settings.save_ui_state(**self.collect_ui_state())
 
         try:
             Gui.ActiveDocument.ActiveView.viewIsometric()

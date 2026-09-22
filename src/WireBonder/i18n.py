@@ -107,7 +107,7 @@ _ZH = {
     "Face {}": "平面 {}",
     "{} : {}": "{} : {}",
     "Centroid {}  Normal {}   (global coordinates)":
-        "质心 {}  法线 {}   (全局坐标)",
+        "质心 {}  法线 {}",
     "(cannot resolve: {})": "(无法解析: {})",
     "Centroid distance L = {:.3f} mm": "两质心间距 L = {:.3f} mm",
     "Span": "连线",
@@ -170,6 +170,10 @@ _ZH = {
         "勾选\"生成金线实体\"可得到真实直径的实体。\n"
         "平分辅助面仅为构造参考, 生成后会隐藏, 可在模型树中手动显示。\n"
         "面板会以上次使用的参数值重新打开。",
+    "The panel reopens with the values used last time;\n"
+    "click a section title to collapse or expand it.":
+        "面板会以上次使用的参数值重新打开;\n"
+        "点击分组标题可折叠或展开该分组。",
 
     # ---------------- commands.py ----------------
     "Create Wire Bond": "创建打线(金线)",

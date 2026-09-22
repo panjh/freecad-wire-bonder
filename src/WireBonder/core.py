@@ -218,6 +218,21 @@ def make_frame(c1, n1, c2, n2, rotation_deg=DEFAULT_PLANE_ROTATION):
 # ----------------------------------------------------------------------
 # Wire loop profile
 # ----------------------------------------------------------------------
+#: Shape factors of the wire loop. The peak sits in the middle, with three
+#: control points on each side, so ``loop_profile()`` returns seven points.
+#:
+#:            0.12   0.50                        0.38   0.78
+#:   C1 --------*-----*----------------*--------*------*----------- C2
+#:   (rise)          (rising)        (peak)  (descent) (fall)
+#:
+RISE_POSITION = 0.12      # steep rise, as a fraction of the rising span
+MID_RISE_POSITION = 0.50  # mid point of the rising span
+MID_RISE_HEIGHT = 0.92    # its height, as a fraction of the clearance
+DESCENT_POSITION = 0.38   # first descending point, as a fraction of the tail
+DESCENT_HEIGHT = 0.86     # its height, as a fraction of the clearance
+FALL_POSITION = 0.78      # landing attitude point, as a fraction of the tail
+
+
 def loop_profile(length, clearance, peak_ratio=DEFAULT_PEAK_RATIO,
                  rise_ratio=DEFAULT_RISE_RATIO, fall_ratio=DEFAULT_FALL_RATIO):
     """Return the wire loop control points ``[(u, v), ...]`` in plane-local coordinates.
@@ -225,6 +240,24 @@ def loop_profile(length, clearance, peak_ratio=DEFAULT_PEAK_RATIO,
     ``u`` runs along the centroid line (0 -> length) and ``v`` is the height
     above that line (0 -> clearance). The shape mimics the trajectory of a wire
     bonder: steep rise after leaving the pad -> loop peak -> gentle descent.
+
+    Seven control points are returned - the peak plus three points on each side:
+
+    =====  ==========================  ==================================
+    index  u                           v
+    =====  ==========================  ==================================
+    1      ``0`` (C1)                  ``0``
+    2      ``RISE_POSITION * peak_u``  ``rise_ratio * clearance``
+    3      ``MID_RISE_POSITION * peak_u``  ``MID_RISE_HEIGHT * clearance``
+    4      ``peak_u`` (loop peak)      ``clearance``
+    5      ``peak_u + DESCENT_POSITION * tail``  ``DESCENT_HEIGHT * clearance``
+    6      ``peak_u + FALL_POSITION * tail``  ``fall_ratio * clearance``
+    7      ``length`` (C2)             ``0``
+    =====  ==========================  ==================================
+
+    Keeping the landing point well before C2 leaves a longer final segment,
+    which keeps the spline from bulging past the second bond point (see the
+    measured overshoot values in docs/parameters.md).
     """
     length = float(length)
     height = float(clearance)
@@ -238,14 +271,17 @@ def loop_profile(length, clearance, peak_ratio=DEFAULT_PEAK_RATIO,
     tail = length - peak_u
 
     return [
-        (0.0, 0.0),
-        (0.12 * peak_u, min(1.0, rise_ratio) * height),   # leaving the pad: steep rise
-        (0.50 * peak_u, 0.92 * height),
-        (peak_u, height),                                  # loop peak
-        (peak_u + 0.35 * tail, 0.88 * height),
-        (peak_u + 0.70 * tail, 0.50 * height),
-        (peak_u + 0.92 * tail, min(0.6, fall_ratio * 2.0) * height),
-        (length, 0.0),
+        (0.0, 0.0),                                            # C1
+        (RISE_POSITION * peak_u,
+         min(1.0, rise_ratio) * height),                       # steep rise
+        (MID_RISE_POSITION * peak_u,
+         MID_RISE_HEIGHT * height),                            # rising
+        (peak_u, height),                                      # loop peak
+        (peak_u + DESCENT_POSITION * tail,
+         DESCENT_HEIGHT * height),                             # descending
+        (peak_u + FALL_POSITION * tail,
+         min(0.6, fall_ratio * 2.0) * height),                 # landing attitude
+        (length, 0.0),                                         # C2
     ]
 
 
