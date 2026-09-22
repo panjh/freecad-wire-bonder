@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.2.0 |
+| 文档版本 | v0.4.0 |
 | 日期 | 2026-09-21 |
 | 状态 | 已实现并通过实机验证 |
 | 源码目录 | [`src/`](../src/README.md) |
@@ -97,6 +97,8 @@
 | FR-15 | 面板显示两个面的全局质心与**两质心间距 L**；当净空高度大于 L 时给出提醒 | 中 | 已实现（v0.1.2） |
 | FR-16 | **走线平面偏转角**可设置：走线平面绕两质心连线旋转指定角度，默认 `0°` 与原平分平面完全重合 | 中 | 已实现（v0.1.3） |
 | FR-17 | **多语言**：界面文字跟随 FreeCAD 语言设置，中文环境显示中文，**其它语言（含英文）显示英文**；未翻译条目回退英文 | 中 | 已实现（v0.2.0） |
+| FR-18 | 切换语言**无需重启**：偏好设置改语言后工作台名、工具栏/菜单按钮、面板立即随之切换 | 中 | 已实现（v0.3.0） |
+| FR-19 | **面板记住上次设置**：OK 后持久化，下次打开自动回填；提供「恢复默认值」 | 中 | 已实现（v0.4.0） |
 
 ### 4.1 FR-2 的几何定义（精确表述）
 
@@ -511,7 +513,20 @@ face_global = face.transformed(extra.toMatrix())
 
 ---
 
-## 14. 国际化设计
+## 14. 面板参数持久化
+
+| 项目 | 说明 |
+| --- | --- |
+| 存储位置 | `User parameter:BaseApp/Preferences/Mod/WireBonder`（FreeCAD 用户参数，**不写入 .FCStd**） |
+| 触发时机 | 面板点 **OK** 成功后写入；面板构造时读取并回填 |
+| 持久化字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `PlaneRotation` / `PeakRatio` / `RiseRatio` / `FallRatio` / `MakeSolid` / `ShowCentreline` / `MakeBalls` / `CreatePlane`（长度以 mm 存储，面板负责 µm 换算） |
+| 读取兜底 | 逐项独立读取，缺失或类型异常时回退到 `core` 中的内置默认值；`Settings.load_checked()` 还会把值夹到面板控件的合法区间，防止手工改坏参数后界面出现异常值 |
+| 重置方式 | 面板底部 **恢复默认值** 按钮（同时清空存储），或 `Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder` |
+| 注意事项 | `ParamGet` 按类型分别存储，删除必须用对应方法（数值 `RemFloat`、布尔 `RemBool`）；用 `RemString` 删数值会静默失败 |
+
+> 持久化的只是**面板默认值**。已创建的对象保留自身属性，改默认值不会追溯修改既有几何。
+
+## 15. 国际化设计
 
 ### 14.1 语言判定
 
@@ -547,7 +562,7 @@ face_global = face.transformed(extra.toMatrix())
 * 语言在**加载时确定**（`language()` 带缓存），运行中修改 FreeCAD 语言需重启 FreeCAD 才能切换界面。
 * 英文词条没有独立表，直接复用 msgid，因此英文文案以源码中的写法为准。
 
-## 15. 附录
+## 16. 附录
 
 ### 14.1 关键 FreeCAD API
 
@@ -572,3 +587,5 @@ face_global = face.transformed(extra.toMatrix())
 | v0.1.2 | 2026-09-21 | **修复装配体坐标系 bug**：新增 `core.global_face()`，补偿 `App::Part` 等父容器变换（此前质心按局部坐标计算，金线画到模型之外）；面板质心显示改为全局坐标，并显示两质心间距 L 与“净空高度大于间距”提醒 |
 | v0.1.3 | 2026-09-21 | 新增**走线平面偏转角** `PlaneRotation`（`App::PropertyAngle`，默认 `0°`）：`core.make_frame()` 支持把 y/z 轴绕质心连线旋转，金线所在的平面随之偏转；金线与辅助面同参数联动 |
 | v0.2.0 | 2026-09-22 | 新增**多语言支持**（`WireBonder/i18n.py`）：跟随 FreeCAD 语言设置，中文显示中文、其它语言回退英文；`InitGui` / `commands` / `taskpanel` / `features` / `core` 的用户可见文案全部走 `_()`；启动日志新增 `language = zh/en` 记录 |
+| v0.3.0 | 2026-09-22 | **切换语言无需重启**（`WireBonder/language_monitor.py`）：同时监视 `Language` 用户参数与 `FreeCADGui.getLocale()`，变化即刷新 i18n 缓存、调用 `setLocale()` 同步 GUI、重新注册工作台，并用 `QTimer.singleShot(0, ...)` 延后重设 QAction 文字（FreeCAD 处理 `LanguageChange` 时会覆盖） |
+| v0.4.0 | 2026-09-22 | 新增**面板参数持久化**（`WireBonder/settings.py`）：OK 后把 11 项参数写入 `User parameter:BaseApp/Preferences/Mod/WireBonder`，下次打开面板自动回填；新增「恢复默认值」按钮；注意 `ParamGet` 数值/布尔需分别用 `RemFloat` / `RemBool` 删除 |

@@ -9,7 +9,7 @@ try:  # FreeCAD 1.x ships a PySide compatibility layer (backed by PySide6 / PySi
 except ImportError:  # pragma: no cover
     from PySide2 import QtCore, QtWidgets
 
-from . import core, features
+from . import core, features, settings
 from .i18n import translate as _
 
 
@@ -43,9 +43,29 @@ class WireBondTaskPanel:
         # selection: [(obj1, "Face3"), (obj2, "Face7")]
         self.selection = list(selection)
 
+        # Restore the values used last time, so repeated wire bonds do not need
+        # the same numbers typed in again (stored in the FreeCAD user parameters).
+        self.settings = settings.load_defaults()
+
         self.form = QtWidgets.QWidget()
         self.form.setWindowTitle(_("Wire Bond"))
         self._build_ui()
+
+    def collect_settings(self):
+        """Read the current widget values back into a settings dict (in mm)."""
+        return {
+            "wire_diameter": self.diameter_um.value() / 1000.0,
+            "clearance": self.clearance_um.value() / 1000.0,
+            "ball_diameter": self.ball_diameter_um.value() / 1000.0,
+            "plane_rotation": self.plane_rotation_deg.value(),
+            "peak_ratio": self.peak_ratio.value(),
+            "rise_ratio": self.rise_ratio.value(),
+            "fall_ratio": self.fall_ratio.value(),
+            "make_solid": self.make_solid.isChecked(),
+            "show_centreline": self.show_centreline.isChecked(),
+            "make_balls": self.make_balls.isChecked(),
+            "create_plane": self.create_plane.isChecked(),
+        }
 
     # ------------------------------------------------------------------
     # UI
@@ -109,14 +129,14 @@ class WireBondTaskPanel:
         self.diameter_um = QtWidgets.QDoubleSpinBox()
         self.diameter_um.setDecimals(2)
         self.diameter_um.setRange(0.1, 500.0)
-        self.diameter_um.setValue(core.DEFAULT_WIRE_DIAMETER * 1000.0)
+        self.diameter_um.setValue(self.settings["wire_diameter"] * 1000.0)
         self.diameter_um.setSuffix(" µm")
         form.addRow(_("Wire Diameter"), self.diameter_um)
 
         self.clearance_um = QtWidgets.QDoubleSpinBox()
         self.clearance_um.setDecimals(1)
         self.clearance_um.setRange(0.0, 100000.0)
-        self.clearance_um.setValue(core.DEFAULT_CLEARANCE * 1000.0)
+        self.clearance_um.setValue(self.settings["clearance"] * 1000.0)
         self.clearance_um.setSuffix(" µm")
         form.addRow(_("Clearance"), self.clearance_um)
 
@@ -124,7 +144,7 @@ class WireBondTaskPanel:
         self.plane_rotation_deg.setDecimals(1)
         self.plane_rotation_deg.setRange(-180.0, 180.0)
         self.plane_rotation_deg.setSingleStep(5.0)
-        self.plane_rotation_deg.setValue(core.DEFAULT_PLANE_ROTATION)
+        self.plane_rotation_deg.setValue(self.settings["plane_rotation"])
         self.plane_rotation_deg.setSuffix(" °")
         self.plane_rotation_deg.setToolTip(
             _("Rotation of the wire plane about the centroid line: 0 deg is "
@@ -137,27 +157,27 @@ class WireBondTaskPanel:
         self.peak_ratio.setDecimals(2)
         self.peak_ratio.setSingleStep(0.05)
         self.peak_ratio.setRange(0.05, 0.95)
-        self.peak_ratio.setValue(core.DEFAULT_PEAK_RATIO)
+        self.peak_ratio.setValue(self.settings["peak_ratio"])
         form.addRow(_("Peak Position Ratio"), self.peak_ratio)
 
         self.rise_ratio = QtWidgets.QDoubleSpinBox()
         self.rise_ratio.setDecimals(2)
         self.rise_ratio.setSingleStep(0.05)
         self.rise_ratio.setRange(0.0, 1.0)
-        self.rise_ratio.setValue(core.DEFAULT_RISE_RATIO)
+        self.rise_ratio.setValue(self.settings["rise_ratio"])
         form.addRow(_("Rise Height Ratio"), self.rise_ratio)
 
         self.fall_ratio = QtWidgets.QDoubleSpinBox()
         self.fall_ratio.setDecimals(2)
         self.fall_ratio.setSingleStep(0.05)
         self.fall_ratio.setRange(0.0, 0.60)
-        self.fall_ratio.setValue(core.DEFAULT_FALL_RATIO)
+        self.fall_ratio.setValue(self.settings["fall_ratio"])
         form.addRow(_("Fall Height Ratio"), self.fall_ratio)
 
         self.ball_diameter_um = QtWidgets.QDoubleSpinBox()
         self.ball_diameter_um.setDecimals(1)
         self.ball_diameter_um.setRange(1.0, 20000.0)
-        self.ball_diameter_um.setValue(core.DEFAULT_BALL_DIAMETER * 1000.0)
+        self.ball_diameter_um.setValue(self.settings["ball_diameter"] * 1000.0)
         self.ball_diameter_um.setSuffix(" µm")
         form.addRow(_("Bond Ball Diameter"), self.ball_diameter_um)
 
@@ -169,22 +189,22 @@ class WireBondTaskPanel:
         self.make_solid = QtWidgets.QCheckBox(
             _("Create the gold wire solid (slower for small diameters)")
         )
-        self.make_solid.setChecked(False)
+        self.make_solid.setChecked(bool(self.settings["make_solid"]))
         opt_layout.addWidget(self.make_solid)
 
         self.show_centreline = QtWidgets.QCheckBox(_("Also show the centreline"))
-        self.show_centreline.setChecked(True)
+        self.show_centreline.setChecked(bool(self.settings["show_centreline"]))
         opt_layout.addWidget(self.show_centreline)
 
         self.make_balls = QtWidgets.QCheckBox(_("Create bond balls"))
-        self.make_balls.setChecked(True)
+        self.make_balls.setChecked(bool(self.settings["make_balls"]))
         opt_layout.addWidget(self.make_balls)
 
         self.create_plane = QtWidgets.QCheckBox(
             _("Create the bisector helper plane (construction reference, hidden "
               "after creation; off by default)")
         )
-        self.create_plane.setChecked(False)
+        self.create_plane.setChecked(bool(self.settings["create_plane"]))
         opt_layout.addWidget(self.create_plane)
 
         layout.addWidget(options)
@@ -201,17 +221,45 @@ class WireBondTaskPanel:
             span_note.setWordWrap(True)
             layout.addWidget(span_note)
 
+        # The panel remembers the last used values; offer a way back to the
+        # built-in defaults (which also clears the stored settings).
+        self.restore_button = QtWidgets.QPushButton(_("Restore Defaults"))
+        self.restore_button.setToolTip(
+            _("Reset the panel to the built-in defaults and forget the stored "
+              "settings.")
+        )
+        self.restore_button.clicked.connect(self._restore_defaults)
+        layout.addWidget(self.restore_button)
+
         hint = QtWidgets.QLabel(
             _("Note: a 20 um gold wire is usually invisible at assembly scale, "
               "so only the centreline is generated by default;\n"
               "enable \"Create the gold wire solid\" to get a solid with the "
               "real diameter.\n"
               "The bisector helper plane is only a construction reference; it "
-              "is hidden after creation and can be shown from the tree.")
+              "is hidden after creation and can be shown from the tree.\n"
+              "The panel reopens with the values used last time.")
         )
         hint.setStyleSheet("color: gray;")
         layout.addWidget(hint)
         layout.addStretch(1)
+
+    def _restore_defaults(self):
+        """Reset every widget to the built-in default and drop the stored values."""
+        defaults = settings.Settings.defaults()
+        settings.clear()
+
+        self.diameter_um.setValue(defaults["wire_diameter"] * 1000.0)
+        self.clearance_um.setValue(defaults["clearance"] * 1000.0)
+        self.ball_diameter_um.setValue(defaults["ball_diameter"] * 1000.0)
+        self.plane_rotation_deg.setValue(defaults["plane_rotation"])
+        self.peak_ratio.setValue(defaults["peak_ratio"])
+        self.rise_ratio.setValue(defaults["rise_ratio"])
+        self.fall_ratio.setValue(defaults["fall_ratio"])
+        self.make_solid.setChecked(bool(defaults["make_solid"]))
+        self.show_centreline.setChecked(bool(defaults["show_centreline"]))
+        self.make_balls.setChecked(bool(defaults["make_balls"]))
+        self.create_plane.setChecked(bool(defaults["create_plane"]))
 
     # ------------------------------------------------------------------
     # TaskPanel protocol
@@ -282,6 +330,9 @@ class WireBondTaskPanel:
                 None, _("Wire Bond"), _("Failed to create the wire bond:\n{}").format(exc)
             )
             return False
+
+        # Remember what was used, so the next panel opens with the same values.
+        settings.save_defaults(**self.collect_settings())
 
         try:
             Gui.ActiveDocument.ActiveView.viewIsometric()

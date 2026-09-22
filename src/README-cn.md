@@ -124,6 +124,12 @@ Gui.activateWorkbench("WireBonderWorkbench")
 | 生成焊球 | 是 | 在两个质心处生成焊球，直径由“焊球直径”指定 |
 | 创建平分辅助面 | 否 | 额外生成平分平面（构造参考，生成后自动隐藏）；**默认不创建**，可减少对象数量 |
 
+> **面板会记住上次的设置**：点 OK 后当前参数会保存到 FreeCAD 用户参数
+> （`User parameter:BaseApp/Preferences/Mod/WireBonder`），下次打开面板时自动回填，
+> 包括金线直径、净空高度、走线平面偏转角、各比例、焊球直径与所有复选框。
+> 想回到内置默认值，点面板底部的 **恢复默认值** 按钮（同时清除已保存的设置），
+> 或在 **Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder** 中手动删除。
+
 > 20 µm 的金线在整机尺度（几十毫米）下几乎不可见，所以默认**只生成中心线**；
 > 需要真实实体时勾选“生成金线实体”。
 >
@@ -242,6 +248,8 @@ src/                          # 插件源码 (安装时复制到 <Mod>/WireBonde
 └── WireBonder/               # Python 包
     ├── __init__.py           # 版本与简介
     ├── i18n.py               # 多语言 (中文/英文, 跟随 FreeCAD 语言设置)
+    ├── language_monitor.py   # 运行期语言变化监听 (切换语言无需重启)
+    ├── settings.py           # 面板参数持久化 (记住上次设置)
     ├── core.py               # 几何核心（无 GUI 依赖）: 质心/法线、平分平面、打线弧、放样、焊球
     ├── features.py           # 参数化对象 WireBond / WireBondPlane + 显示样式
     ├── taskpanel.py          # 参数面板（PySide2 / PySide6 兼容）
