@@ -39,6 +39,13 @@ _SPEC = {
     "make_solid": ("MakeSolid", False),
     "show_centreline": ("ShowCentreline", True),
     "make_balls": ("MakeBalls", True),
+    "ball_mode": ("BallMode", core.BUMP_SPHERE),
+    "start_ball_mode": ("StartBallMode", core.BUMP_SPHERE),
+    "end_ball_mode": ("EndBallMode", core.BUMP_SPHERE),
+    "ball_top_diameter": ("BallTopDiameter", core.DEFAULT_BALL_DIAMETER),
+    "ball_bottom_diameter": ("BallBottomDiameter", core.DEFAULT_BALL_DIAMETER),
+    "lead_distance": ("LeadDistance", core.DEFAULT_LEAD_DISTANCE),
+    "top_length": ("TopLength", core.DEFAULT_TOP_LENGTH),
     "create_plane": ("CreatePlane", False),
     # UI state: which panel sections are expanded (not a geometry parameter)
     "ui_show_faces": ("UiShowFaces", True),
@@ -56,6 +63,12 @@ _BOOLEAN_KEYS = (
     "ui_show_params",
     "ui_show_options",
 )
+
+#: keys stored as strings (enumerations, free text)
+_STRING_KEYS = ("ball_mode", "start_ball_mode", "end_ball_mode")
+
+#: enumeration keys that must hold one of :data:`core.BUMP_MODES`
+_MODE_KEYS = ("ball_mode", "start_ball_mode", "end_ball_mode")
 
 
 def _open_params():
@@ -92,6 +105,11 @@ class Settings(dict):
             try:
                 if key in _BOOLEAN_KEYS:
                     settings[key] = params.GetBool(name, bool(fallback))
+                elif key in _STRING_KEYS:
+                    value = params.GetString(name, str(fallback))
+                    if key in _MODE_KEYS and value not in core.BUMP_MODES:
+                        value = core.BUMP_SPHERE
+                    settings[key] = value
                 else:
                     settings[key] = params.GetFloat(name, float(fallback))
             except Exception:
@@ -112,6 +130,8 @@ class Settings(dict):
             "wire_diameter": (0.0001, 0.5),        # 0.1 um ... 500 um
             "clearance": (0.0, 100.0),             # 0 ... 100000 um
             "ball_diameter": (0.001, 20.0),        # 1 um ... 20000 um
+            "lead_distance": (0.0, 5.0),           # 0 ... 5000 um
+            "top_length": (0.0, 20.0),             # 0 ... 20000 um
             "plane_rotation": (-180.0, 180.0),
             "peak_ratio": (0.05, 0.95),
             "rise_ratio": (0.0, 1.0),
@@ -188,6 +208,8 @@ def _store(values):
         try:
             if key in _BOOLEAN_KEYS:
                 params.SetBool(name, bool(value))
+            elif key in _STRING_KEYS:
+                params.SetString(name, str(value))
             else:
                 params.SetFloat(name, float(value))
         except Exception:
@@ -211,6 +233,8 @@ def clear():
         try:
             if key in _BOOLEAN_KEYS:
                 params.RemBool(name)
+            elif key in _STRING_KEYS:
+                params.RemString(name)
             else:
                 params.RemFloat(name)
             removed = True

@@ -58,8 +58,15 @@ DEFAULT_WIRE_DIAMETER = 0.02   # 20 um, typical gold wire diameter
 DEFAULT_CLEARANCE = 0.5        # clearance 500 um (loop peak above the centroid line)
 DEFAULT_PEAK_RATIO = 0.42      # loop peak position as a ratio of the centroid distance
 DEFAULT_RISE_RATIO = 0.60      # height ratio of the steep rise point near the start
-DEFAULT_FALL_RATIO = 0.20      # height ratio of the landing point near the end
+DEFAULT_FALL_RATIO = 0.12      # height ratio of the landing point near the end;
+#                                kept low so the descent stays nearly straight
+#                                (measured bulge: 2.7% at 0.12 vs 5.6% at 0.20)
 DEFAULT_BALL_DIAMETER = 0.05   # bond ball diameter 50 um (about 2.5x the wire diameter)
+DEFAULT_LEAD_DISTANCE = 0.01   # 10 um from each pad to its entry/exit control point
+DEFAULT_TOP_LENGTH = 0.20      # 200 um flat top, matching the reference sketch
+#                                (0.3 * L' there); the plateau is an absolute
+#                                length, so its share of the span shrinks as the
+#                                pads get further apart
 DEFAULT_PLANE_ROTATION = 0.0   # wire plane rotation about the centroid line (deg), 0 = coincident
 DEFAULT_PLANE_MARGIN = 2.0     # visual margin of the helper plane rectangle (mm)
 
@@ -218,46 +225,67 @@ def make_frame(c1, n1, c2, n2, rotation_deg=DEFAULT_PLANE_ROTATION):
 # ----------------------------------------------------------------------
 # Wire loop profile
 # ----------------------------------------------------------------------
-#: Shape factors of the wire loop. The peak sits in the middle, with three
-#: control points on each side, so ``loop_profile()`` returns seven points.
+#: Shape of the wire loop, with eight control points: a curved rise, a flat top
+#: held by three points, a straight descent and a landing fillet.
 #:
-#:            0.12   0.50                        0.38   0.78
-#:   C1 --------*-----*----------------*--------*------*----------- C2
-#:   (rise)          (rising)        (peak)  (descent) (fall)
+#:      lead         top_length            lead
+#:   C1 ---*      *---------*---------*      *--- C2
+#:   (rise) \    / (start)  (mid)  (end) \   / (fall)
+#:           \__/                          \_/
+#:         (curved)          (straight)   (fillet)
 #:
-RISE_POSITION = 0.12      # steep rise, as a fraction of the rising span
-MID_RISE_POSITION = 0.50  # mid point of the rising span
-MID_RISE_HEIGHT = 0.92    # its height, as a fraction of the clearance
-DESCENT_POSITION = 0.38   # first descending point, as a fraction of the tail
-DESCENT_HEIGHT = 0.86     # its height, as a fraction of the clearance
-FALL_POSITION = 0.78      # landing attitude point, as a fraction of the tail
+#: Two placement rules matter:
+#:
+#: * point 6 lies **on the line** from the plateau end to the landing point;
+#:   collinear points make the natural spline's second derivatives vanish, so
+#:   the descent is straight rather than bulging;
+#: * the plateau is held by three points, not two. Measured effect on the loop
+#:   height: with two points the spline overshoots the requested clearance by
+#:   6.8%, with three it is 1.8% - so the clearance parameter is trustworthy.
+MAX_LEAD_FRACTION = 0.30   # lead may use at most this fraction of the span
+MAX_TOP_FRACTION = 0.45    # flat top may use at most this fraction of the span;
+#                            a longer top would leave almost no straight descent
 
 
 def loop_profile(length, clearance, peak_ratio=DEFAULT_PEAK_RATIO,
-                 rise_ratio=DEFAULT_RISE_RATIO, fall_ratio=DEFAULT_FALL_RATIO):
+                 rise_ratio=DEFAULT_RISE_RATIO, fall_ratio=DEFAULT_FALL_RATIO,
+                 lead_distance=DEFAULT_LEAD_DISTANCE,
+                 top_length=DEFAULT_TOP_LENGTH):
     """Return the wire loop control points ``[(u, v), ...]`` in plane-local coordinates.
 
     ``u`` runs along the centroid line (0 -> length) and ``v`` is the height
-    above that line (0 -> clearance). The shape mimics the trajectory of a wire
-    bonder: steep rise after leaving the pad -> loop peak -> gentle descent.
+    above that line (0 -> clearance).
 
-    Seven control points are returned - the peak plus three points on each side:
+    The eight points reproduce the classic bonder loop: a curved rise off the
+    first pad, a flat top, a straight descent, and a short landing fillet:
 
-    =====  ==========================  ==================================
-    index  u                           v
-    =====  ==========================  ==================================
-    1      ``0`` (C1)                  ``0``
-    2      ``RISE_POSITION * peak_u``  ``rise_ratio * clearance``
-    3      ``MID_RISE_POSITION * peak_u``  ``MID_RISE_HEIGHT * clearance``
-    4      ``peak_u`` (loop peak)      ``clearance``
-    5      ``peak_u + DESCENT_POSITION * tail``  ``DESCENT_HEIGHT * clearance``
-    6      ``peak_u + FALL_POSITION * tail``  ``fall_ratio * clearance``
-    7      ``length`` (C2)             ``0``
-    =====  ==========================  ==================================
+    =====  =============================  ==================================
+    index  u                              v
+    =====  =============================  ==================================
+    1      ``0`` (C1)                      ``0``
+    2      ``lead``                        ``rise_ratio * clearance``
+    3      ``peak_u - top_length/2``       ``clearance``   (plateau start)
+    4      ``peak_u``                      ``clearance``   (plateau middle)
+    5      ``peak_u + top_length/2``       ``clearance``   (plateau end)
+    6      collinear with 5 and 7          on the descent line
+    7      ``length - lead``                ``fall_ratio * clearance``
+    8      ``length`` (C2)                  ``0``
+    =====  =============================  ==================================
 
-    Keeping the landing point well before C2 leaves a longer final segment,
-    which keeps the spline from bulging past the second bond point (see the
-    measured overshoot values in docs/parameters.md).
+    Four parameters describe the shape the way a bonder engineer thinks of it:
+
+    * ``clearance`` - how high the flat top runs above the pads;
+    * ``lead_distance`` - how far from each pad the wire reaches
+      ``rise_ratio * clearance`` on the way up and ``fall_ratio * clearance`` on
+      the way down; with those ratios it fixes the entry and exit angles
+      (``slope ~ ratio * clearance / lead``);
+    * ``top_length`` - how long the flat section on top is; a longer top leaves
+      a shorter but steeper descent, which is the trade-off seen in real loops;
+    * ``peak_ratio`` - where the plateau sits along the line.
+
+    Point 5 is computed to lie exactly on the segment from point 4 to point 6,
+    so the descent is straight rather than a bulge. All three lengths are
+    clamped so the seven points always stay in order.
     """
     length = float(length)
     height = float(clearance)
@@ -270,17 +298,45 @@ def loop_profile(length, clearance, peak_ratio=DEFAULT_PEAK_RATIO,
     peak_u = length * ratio
     tail = length - peak_u
 
+    lead = float(lead_distance or 0.0)
+    if lead <= 0.0:
+        lead = DEFAULT_LEAD_DISTANCE
+    lead = min(lead, MAX_LEAD_FRACTION * min(peak_u, tail))
+
+    top = float(top_length or 0.0)
+    if top <= 0.0:
+        top = DEFAULT_TOP_LENGTH
+    # The plateau spans peak_u ± top/2, so it has to clear the entry point on
+    # one side and the landing point on the other. Both rooms are measured and
+    # the smaller one wins; a 2% margin keeps the eight u values strictly
+    # increasing, which the spline interpolation requires.
+    half_room = min(peak_u - lead, (length - lead) - peak_u)
+    half_top = max(min(top / 2.0, MAX_TOP_FRACTION * length / 2.0,
+                       half_room * 0.98), 0.0)
+    top = half_top * 2.0
+
+    u_plateau_start = peak_u - half_top
+    u_plateau_end = peak_u + half_top
+    u_landing = length - lead
+    v_landing = min(0.6, fall_ratio * 2.0) * height
+
+    # midpoint of the descent, placed on the straight line 5 -> 7
+    u_mid = (u_plateau_end + u_landing) / 2.0
+    if u_landing - u_plateau_end > 1e-12:
+        v_mid = height + (v_landing - height) * (
+            (u_mid - u_plateau_end) / (u_landing - u_plateau_end))
+    else:
+        v_mid = (height + v_landing) / 2.0
+
     return [
         (0.0, 0.0),                                            # C1
-        (RISE_POSITION * peak_u,
-         min(1.0, rise_ratio) * height),                       # steep rise
-        (MID_RISE_POSITION * peak_u,
-         MID_RISE_HEIGHT * height),                            # rising
-        (peak_u, height),                                      # loop peak
-        (peak_u + DESCENT_POSITION * tail,
-         DESCENT_HEIGHT * height),                             # descending
-        (peak_u + FALL_POSITION * tail,
-         min(0.6, fall_ratio * 2.0) * height),                 # landing attitude
+        (lead,
+         min(1.0, rise_ratio) * height),                       # leaving the pad
+        (u_plateau_start, height),                             # plateau start
+        (peak_u, height),                                      # plateau middle
+        (u_plateau_end, height),                               # plateau end
+        (u_mid, v_mid),                                        # on the descent
+        (u_landing, v_landing),                                # landing point
         (length, 0.0),                                         # C2
     ]
 
@@ -326,17 +382,80 @@ def sweep_wire(path_wire, diameter):
     return solid
 
 
-def bond_balls(centre1, centre2, diameter=DEFAULT_BALL_DIAMETER):
-    """Create one bond ball at each centroid, representing the two bond points."""
-    diameter = float(diameter)
-    if diameter <= 0.0:
+#: Bond bump shapes selectable on the panel
+BUMP_NONE = "none"
+BUMP_SPHERE = "sphere"
+BUMP_FRUSTUM = "frustum"
+BUMP_MODES = (BUMP_NONE, BUMP_SPHERE, BUMP_FRUSTUM)
+
+
+def bond_bumps(centre1, centre2, mode=BUMP_SPHERE,
+               diameter=DEFAULT_BALL_DIAMETER,
+               top_diameter=DEFAULT_BALL_DIAMETER,
+               bottom_diameter=DEFAULT_BALL_DIAMETER,
+               direction=None):
+    """Create a bond bump at each centroid, in the shape selected by ``mode``.
+
+    ``mode`` is one of :data:`BUMP_NONE`, :data:`BUMP_SPHERE` or
+    :data:`BUMP_FRUSTUM`:
+
+    * ``none`` - returns an empty list (no bump geometry);
+    * ``sphere`` - a ball of ``diameter``, the classic ball bond;
+    * ``frustum`` - a truncated cone from ``bottom_diameter`` (sitting on the
+      pad) to ``top_diameter``, with a height of ``diameter``.
+
+    ``direction`` is the outward normal of the pad the bump sits on; the sphere
+    ignores it, the frustum is oriented along it so its wider or narrower end
+    faces the pad as intended. Coordinates are global, as produced by
+    :func:`global_face`.
+    """
+    # An unset value means "use the default shape", not "no bump": only an
+    # explicit "none" disables the geometry.
+    if mode is None or mode == "":
+        mode = BUMP_SPHERE
+    else:
+        mode = str(mode).strip().lower()
+
+    if mode in (BUMP_NONE, "off", "disabled", "0", "false"):
+        return []
+    if mode not in (BUMP_SPHERE, BUMP_FRUSTUM):
+        # be forgiving about unknown values: fall back to the classic ball
+        mode = BUMP_SPHERE
+
+    height = float(diameter)
+    if height <= 0.0:
         raise WireBondError(_("Ball diameter must be greater than zero."))
 
-    radius = diameter / 2.0
-    balls = []
-    for centre in (centre1, centre2):
-        balls.append(Part.makeSphere(radius, Vector(centre.x, centre.y, centre.z)))
-    return balls
+    centres = [Vector(c.x, c.y, c.z) for c in (centre1, centre2)]
+    bumps = []
+
+    if mode == BUMP_SPHERE:
+        radius = height / 2.0
+        for centre in centres:
+            bumps.append(Part.makeSphere(radius, centre))
+        return bumps
+
+    # frustum: radius of the end sitting on the pad is "bottom", the other is "top"
+    bottom_radius = float(bottom_diameter) / 2.0
+    top_radius = float(top_diameter) / 2.0
+    if bottom_radius <= 0.0 or top_radius <= 0.0:
+        raise WireBondError(_("Ball diameter must be greater than zero."))
+
+    axis = Vector(0, 0, 1) if direction is None else Vector(
+        direction.x, direction.y, direction.z)
+    if axis.Length < 1e-12:
+        axis = Vector(0, 0, 1)
+    axis.normalize()
+
+    for centre in centres:
+        bumps.append(Part.makeCone(bottom_radius, top_radius, height,
+                                   centre, axis, 360))
+    return bumps
+
+
+def bond_balls(centre1, centre2, diameter=DEFAULT_BALL_DIAMETER):
+    """Backwards compatible wrapper: two spherical bumps of ``diameter``."""
+    return bond_bumps(centre1, centre2, mode=BUMP_SPHERE, diameter=diameter)
 
 
 def plane_face(frame, margin=DEFAULT_PLANE_MARGIN, width_factor=0.35):
@@ -366,21 +485,29 @@ def compute_from_faces(face1, face2, wire_diameter=DEFAULT_WIRE_DIAMETER,
                        make_solid=True,
                        make_balls=False,
                        ball_diameter=DEFAULT_BALL_DIAMETER,
+                       ball_mode=BUMP_SPHERE,
+                       top_diameter=None,
+                       bottom_diameter=None,
+                       start_ball_mode=None,
+                       end_ball_mode=None,
+                       lead_distance=DEFAULT_LEAD_DISTANCE,
+                       top_length=DEFAULT_TOP_LENGTH,
                        rotation_deg=DEFAULT_PLANE_ROTATION):
-    """Compute the bisector plane, the gold wire and the bond balls from two faces.
+    """Compute the bisector plane, the gold wire and the bond bumps from two faces.
 
     ``rotation_deg``: rotation of the wire plane about the centroid line (deg),
-    default 0.
-
-    Returns a dict with frame / centre_line / solid / balls / plane plus the
-    intermediate centroids and normals.
+    default 0. ``ball_mode`` selects the bump shape (see :func:`bond_bumps`);
+    ``make_balls=False`` keeps the legacy switch working and is equivalent to
+    ``ball_mode=BUMP_NONE``.
     """
     c1, n1 = face_centre_and_normal(face1)
     c2, n2 = face_centre_and_normal(face2)
     frame = make_frame(c1, n1, c2, n2, rotation_deg=rotation_deg)
 
     points2d = loop_profile(frame.length, clearance, peak_ratio,
-                            rise_ratio, fall_ratio)
+                            rise_ratio, fall_ratio,
+                            lead_distance=lead_distance,
+                            top_length=top_length)
     points3d = to_world(frame, points2d)
     centre_line = build_centreline(points3d)
 
@@ -388,7 +515,28 @@ def compute_from_faces(face1, face2, wire_diameter=DEFAULT_WIRE_DIAMETER,
     if make_solid:
         solid = sweep_wire(centre_line, wire_diameter)
 
-    balls = bond_balls(c1, c2, ball_diameter) if make_balls else []
+    if not make_balls:
+        ball_mode = BUMP_NONE
+    if top_diameter is None:
+        top_diameter = ball_diameter
+    if bottom_diameter is None:
+        bottom_diameter = ball_diameter
+
+    # Bumps sit on their own pad, so each follows that face's outward normal.
+    # The two ends may use different shapes: ``start_*`` applies to C1 (the
+    # first bond point) and ``end_*`` to C2. Falling back to ``ball_mode`` keeps
+    # the earlier single-shape API working.
+    start_mode = ball_mode if start_ball_mode is None else start_ball_mode
+    end_mode = ball_mode if end_ball_mode is None else end_ball_mode
+
+    balls = []
+    for centre, normal, mode in ((c1, n1, start_mode), (c2, n2, end_mode)):
+        if mode == BUMP_NONE:
+            continue
+        balls.extend(bond_bumps(
+            centre, centre, mode=mode, diameter=ball_diameter,
+            top_diameter=top_diameter, bottom_diameter=bottom_diameter,
+            direction=normal))
 
     return {
         "frame": frame,

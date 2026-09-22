@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Task panel: collect wire diameter, clearance and related parameters, then create the wire bond."""
 
+import traceback
+
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -71,6 +73,143 @@ def _wrap_label(text=""):
     label.setWordWrap(True)
     label.setMinimumWidth(1)
     return label
+
+
+class _WheelGuard(QtCore.QObject):
+    """Swallow wheel events on a spin box and forward them to the scroll area.
+
+    Without this, hovering over a field and scrolling changes its value - a very
+    easy way to corrupt a parameter by accident. The event is instead handed to
+    the enclosing scroll area so the panel still scrolls under the cursor.
+
+    The guard is parented to the spin box it watches: ``installEventFilter()``
+    does not take ownership, so without a parent the Python object would be
+    garbage collected immediately and the filter would silently stop working.
+    """
+
+    def __init__(self, spinbox, scroll_area):
+        super().__init__(spinbox)          # ownership keeps the filter alive
+        self._scroll_area = scroll_area
+        spinbox.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Type.Wheel:
+            area = self._scroll_area
+            if area is not None and area is not obj:
+                QtWidgets.QApplication.sendEvent(area.viewport(), event)
+            return True
+        return False
+
+
+def _quantity_field(value, unit, decimals=2, minimum=None, maximum=None,
+                    step=None, scroll_area=None):
+    """Create a numeric input backed by FreeCAD's ``Gui::QuantitySpinBox``.
+
+    This is the same widget the property editor uses, which gives each field
+    three conveniences for free:
+
+    * **free unit switching** - the unit is part of the stored value, so the
+      user can type ``0.02 mm``, ``20 um`` or ``1 thou``, compare against a
+      different unit in the context menu, and the display follows. Passing an
+      empty ``unit`` yields a plain dimensionless number field;
+    * **expressions** - arithmetic (``10*2``, ``0.5mm+10um``) and references to
+      ``Spreadsheet`` cells are evaluated when the field is committed;
+    * FreeCAD renders it itself, so the panel matches the property editor.
+
+    ``value`` is expressed in ``unit`` (e.g. millimetres for a length). The
+    widget picks the most readable prefix to display it with.
+    """
+    spin = Gui.UiLoader().createWidget("Gui::QuantitySpinBox")
+    spin.setProperty("unit", unit)
+    spin.setProperty("decimals", int(decimals))
+    if minimum is not None:
+        spin.setProperty("minimum", float(minimum))
+    if maximum is not None:
+        spin.setProperty("maximum", float(maximum))
+    if step is not None:
+        spin.setProperty("singleStep", float(step))
+    # only commit on Enter / focus-out, so typing is not validated mid-keystroke
+    spin.setProperty("keyboardTracking", False)
+    _WheelGuard(spin, scroll_area)
+    set_quantity(spin, value, unit)
+    return spin
+
+
+def _length_field(value_mm, decimals=3, minimum=None, maximum=None,
+                  step=None, scroll_area=None):
+    """Length input, stored in millimetres (FreeCAD's base unit)."""
+    # minimum/maximum are given in millimetres as well
+    spin = _quantity_field(value_mm, "mm", decimals=decimals,
+                           minimum=minimum, maximum=maximum, step=step,
+                           scroll_area=scroll_area)
+    return spin
+
+
+def _angle_field(value_deg, decimals=2, minimum=-180.0, maximum=180.0,
+                 step=5.0, scroll_area=None):
+    """Angle input, stored in degrees."""
+    return _quantity_field(value_deg, "deg", decimals=decimals,
+                           minimum=minimum, maximum=maximum, step=step,
+                           scroll_area=scroll_area)
+
+
+def _ratio_field(value, decimals=3, minimum=None, maximum=None, step=0.05,
+                 scroll_area=None):
+    """Dimensionless ratio input (no unit); expressions work here as well."""
+    return _quantity_field(value, "", decimals=decimals, minimum=minimum,
+                           maximum=maximum, step=step, scroll_area=scroll_area)
+
+
+def get_quantity(spin, unit="mm"):
+    """Read a field as a float in ``unit``, regardless of the displayed unit.
+
+    The unit conversions go through ``App.Units`` - the module imports FreeCAD
+    as ``App``, so the plain ``FreeCAD`` name is not available here.
+    """
+    raw = spin.property("value")
+    try:
+        return float(App.Units.Quantity(raw).getValueAs(unit))
+    except Exception:
+        return float(spin.property("rawValue"))
+
+
+def set_quantity(spin, value, unit="mm"):
+    """Set a field from a value given in ``unit``.
+
+    Two details matter here, both established by measurement:
+
+    * the quantity must be built with ``App.Units`` (the module aliases FreeCAD
+      as ``App``); using ``FreeCAD.Units`` raised ``NameError``, which the
+      fallback silently swallowed - the field then kept the bare number and the
+      unit was lost, so ``0.001 in`` ended up as 0.001 mm instead of 0.0254 mm;
+    * do **not** call ``interpretText()`` afterwards: it re-parses the line
+      edit text (which lags behind the assignment) and overwrites the value.
+    """
+    try:
+        spin.setProperty(
+            "value", App.Units.Quantity("{} {}".format(float(value), unit)))
+    except Exception:
+        spin.setProperty("rawValue", float(value))
+
+
+def get_length_mm(spin):
+    """Read a length field as millimetres."""
+    return get_quantity(spin, "mm")
+
+
+def set_length_mm(spin, millimetres):
+    """Set a length field from millimetres."""
+    set_quantity(spin, millimetres, "mm")
+
+
+def get_number(spin):
+    """Read a dimensionless field."""
+    return float(spin.property("rawValue"))
+
+
+def set_number(spin, value):
+    """Set a dimensionless field (see :func:`set_quantity` on ``interpretText``)."""
+    spin.setProperty("rawValue", float(value))
 
 
 class CollapsibleBox(QtWidgets.QWidget):
@@ -191,24 +330,53 @@ class WireBondTaskPanel:
         # Restore the values used last time, so repeated wire bonds do not need
         # the same numbers typed in again (stored in the FreeCAD user parameters).
         self.settings = settings.load_defaults()
+        # remembered so the "create bond balls" checkbox can restore both ends
+        self._last_ball_modes = (
+            self.settings.get("start_ball_mode", core.BUMP_SPHERE),
+            self.settings.get("end_ball_mode", core.BUMP_SPHERE),
+        )
+        if self._last_ball_modes == (core.BUMP_NONE, core.BUMP_NONE):
+            self._last_ball_modes = (core.BUMP_SPHERE, core.BUMP_SPHERE)
 
         self.form = QtWidgets.QWidget()
         self.form.setWindowTitle(_("Wire Bond"))
         self._build_ui()
 
     def collect_settings(self):
-        """Read the current widget values back into a settings dict (in mm)."""
+        """Read the current widget values back into a settings dict.
+
+        Lengths are returned in millimetres (FreeCAD's base unit) no matter which
+        unit the user chose to display them in.
+        """
+        start_mode, end_mode = self.selected_ball_modes()
+        # legacy single-shape key: kept meaningful ("none" only when both ends
+        # are off) so older parameter files and scripts still behave
+        if start_mode == end_mode:
+            combined_mode = start_mode
+        elif core.BUMP_NONE in (start_mode, end_mode):
+            combined_mode = (end_mode if start_mode == core.BUMP_NONE
+                             else start_mode)
+        else:
+            combined_mode = core.BUMP_FRUSTUM
         return {
-            "wire_diameter": self.diameter_um.value() / 1000.0,
-            "clearance": self.clearance_um.value() / 1000.0,
-            "ball_diameter": self.ball_diameter_um.value() / 1000.0,
-            "plane_rotation": self.plane_rotation_deg.value(),
-            "peak_ratio": self.peak_ratio.value(),
-            "rise_ratio": self.rise_ratio.value(),
-            "fall_ratio": self.fall_ratio.value(),
+            "wire_diameter": get_length_mm(self.diameter_um),
+            "clearance": get_length_mm(self.clearance_um),
+            "ball_diameter": get_length_mm(self.ball_diameter_um),
+            "ball_mode": combined_mode,
+            "start_ball_mode": start_mode,
+            "end_ball_mode": end_mode,
+            "ball_top_diameter": get_length_mm(self.ball_top_um),
+            "ball_bottom_diameter": get_length_mm(self.ball_bottom_um),
+            "plane_rotation": get_quantity(self.plane_rotation_deg, "deg"),
+            "peak_ratio": get_number(self.peak_ratio),
+            "rise_ratio": get_number(self.rise_ratio),
+            "fall_ratio": get_number(self.fall_ratio),
+            "lead_distance": get_length_mm(self.lead_distance),
+            "top_length": get_length_mm(self.top_length),
             "make_solid": self.make_solid.isChecked(),
             "show_centreline": self.show_centreline.isChecked(),
-            "make_balls": self.make_balls.isChecked(),
+            # kept for the older parameter files / object property
+            "make_balls": core.BUMP_NONE not in (start_mode, end_mode),
             "create_plane": self.create_plane.isChecked(),
         }
 
@@ -232,6 +400,105 @@ class WireBondTaskPanel:
         except Exception:
             pass
 
+    def _make_mode_combo(self, current):
+        """Build a bump-shape combo box (none / sphere / frustum)."""
+        combo = QtWidgets.QComboBox()
+        for value, label in (
+                (core.BUMP_NONE, _("None")),
+                (core.BUMP_SPHERE, _("Sphere")),
+                (core.BUMP_FRUSTUM, _("Frustum"))):
+            combo.addItem(label, value)
+        index = combo.findData(current)
+        combo.setCurrentIndex(index if index >= 0 else combo.findData(
+            core.BUMP_SPHERE))
+        # a combo box is not a spin box, but the wheel would still change the
+        # selection while merely scrolling past it
+        _WheelGuard(combo, self._scroll)
+        combo.currentIndexChanged.connect(self._on_ball_mode_changed)
+        return combo
+
+    @staticmethod
+    def _combo_mode(combo):
+        data = combo.currentData()
+        return data if data in core.BUMP_MODES else core.BUMP_SPHERE
+
+    def selected_ball_mode(self):
+        """Shape at C1 (kept for compatibility with earlier callers)."""
+        return self._combo_mode(self.start_ball_mode)
+
+    def selected_ball_modes(self):
+        """Return ``(mode_at_c1, mode_at_c2)``."""
+        return (self._combo_mode(self.start_ball_mode),
+                self._combo_mode(self.end_ball_mode))
+
+    def _on_make_balls_toggled(self, checked):
+        """Keep the legacy checkbox and both shape combo boxes in agreement.
+
+        Unchecking means "no bumps at either end"; re-checking restores the
+        shape each end had before (sphere by default).
+        """
+        if self.start_ball_mode is None:
+            return
+        start_mode, end_mode = self.selected_ball_modes()
+        if not checked:
+            if (start_mode, end_mode) != (core.BUMP_NONE, core.BUMP_NONE):
+                self._last_ball_modes = (start_mode, end_mode)
+                targets = (core.BUMP_NONE, core.BUMP_NONE)
+            else:
+                return
+        else:
+            # ``_last_ball_modes`` is a (start, end) pair - it has to be unpacked
+            # per end, not used as a single value
+            restore_start, restore_end = getattr(
+                self, "_last_ball_modes", (core.BUMP_SPHERE, core.BUMP_SPHERE))
+            targets = (restore_start if start_mode == core.BUMP_NONE
+                       else start_mode,
+                       restore_end if end_mode == core.BUMP_NONE
+                       else end_mode)
+            if targets == (start_mode, end_mode):
+                return
+
+        for combo, value in ((self.start_ball_mode, targets[0]),
+                             (self.end_ball_mode, targets[1])):
+            index = combo.findData(value)
+            if index < 0:
+                continue
+            # guard against recursion: the combo boxes drive their own handler
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+        self._on_ball_mode_changed()
+
+    def _on_ball_mode_changed(self, _index=None):
+        """Show only the diameter fields the selected bump shapes need.
+
+        The two ends are considered together, because they share one set of
+        diameter fields:
+
+        * both ``none``      -> no diameter rows at all
+        * any ``sphere``     -> the diameter row is needed
+        * any ``frustum``    -> the top/bottom rows are needed
+        """
+        start_mode, end_mode = self.selected_ball_modes()
+        modes = (start_mode, end_mode)
+        wanted = []
+        if any(m == core.BUMP_SPHERE for m in modes):
+            wanted.append("diameter")
+        if any(m == core.BUMP_FRUSTUM for m in modes):
+            wanted.extend(("top", "bottom"))
+        if start_mode == core.BUMP_NONE and end_mode == core.BUMP_NONE:
+            wanted = []
+        wanted = tuple(wanted)
+
+        for label, field, name in self._ball_rows:
+            visible = name in wanted
+            label.setVisible(visible)
+            field.setVisible(visible)
+        # let the form layout reclaim the freed space immediately
+        for parent in (field.parentWidget() for _l, field, _n in self._ball_rows):
+            if parent is not None:
+                parent.updateGeometry()
+
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
@@ -247,6 +514,8 @@ class WireBondTaskPanel:
         content = QtWidgets.QWidget()
         scroll.setWidget(content)
         outer.addWidget(scroll)
+        # remembered so the wheel guard can forward scrolling to the panel
+        self._scroll = scroll
 
         layout = QtWidgets.QVBoxLayout(content)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -316,26 +585,30 @@ class WireBondTaskPanel:
         form.setContentsMargins(0, 0, 0, 0)
         self.section_params.content_layout.addWidget(params)
 
-        self.diameter_um = QtWidgets.QDoubleSpinBox()
-        self.diameter_um.setDecimals(2)
-        self.diameter_um.setRange(0.1, 500.0)
-        self.diameter_um.setValue(self.settings["wire_diameter"] * 1000.0)
-        self.diameter_um.setSuffix(" µm")
+        # All numeric fields use FreeCAD's own Gui::QuantitySpinBox, the same
+        # widget as the property editor: the unit is part of the value (so the
+        # user may enter "0.02 mm", "20 um" or switch via the context menu),
+        # expressions such as "10*2" are evaluated, and scrolling over a field
+        # is redirected to the panel instead of changing the value.
+        self.diameter_um = _length_field(
+            self.settings["wire_diameter"], decimals=3,
+            minimum=0.0001, maximum=0.5, step=0.001, scroll_area=self._scroll)
+        self.diameter_um.setToolTip(
+            _("Gold wire diameter, e.g. 20 um. Any length unit works; "
+              "expressions such as 0.01*2 are accepted."))
         form.addRow(_("Wire Diameter"), self.diameter_um)
 
-        self.clearance_um = QtWidgets.QDoubleSpinBox()
-        self.clearance_um.setDecimals(1)
-        self.clearance_um.setRange(0.0, 100000.0)
-        self.clearance_um.setValue(self.settings["clearance"] * 1000.0)
-        self.clearance_um.setSuffix(" µm")
+        self.clearance_um = _length_field(
+            self.settings["clearance"], decimals=4,
+            minimum=0.0, maximum=100.0, step=0.01, scroll_area=self._scroll)
+        self.clearance_um.setToolTip(
+            _("Loop height above the centroid line, e.g. 0.5 mm or 500 um. "
+              "Any length unit works."))
         form.addRow(_("Clearance"), self.clearance_um)
 
-        self.plane_rotation_deg = QtWidgets.QDoubleSpinBox()
-        self.plane_rotation_deg.setDecimals(1)
-        self.plane_rotation_deg.setRange(-180.0, 180.0)
-        self.plane_rotation_deg.setSingleStep(5.0)
-        self.plane_rotation_deg.setValue(self.settings["plane_rotation"])
-        self.plane_rotation_deg.setSuffix(" °")
+        self.plane_rotation_deg = _angle_field(
+            self.settings["plane_rotation"], decimals=2,
+            minimum=-180.0, maximum=180.0, step=5.0, scroll_area=self._scroll)
         self.plane_rotation_deg.setToolTip(
             _("Rotation of the wire plane about the centroid line: 0 deg is "
               "coincident\nwith the bisector plane; a non-zero angle tilts the "
@@ -343,33 +616,108 @@ class WireBondTaskPanel:
         )
         form.addRow(_("Wire Plane Rotation"), self.plane_rotation_deg)
 
-        self.peak_ratio = QtWidgets.QDoubleSpinBox()
-        self.peak_ratio.setDecimals(2)
-        self.peak_ratio.setSingleStep(0.05)
-        self.peak_ratio.setRange(0.05, 0.95)
-        self.peak_ratio.setValue(self.settings["peak_ratio"])
+        self.peak_ratio = _ratio_field(
+            self.settings["peak_ratio"], decimals=3,
+            minimum=0.05, maximum=0.95, step=0.05, scroll_area=self._scroll)
+        self.peak_ratio.setToolTip(
+            _("Position of the loop peak along the centroid line, as a ratio "
+              "(0.5 = symmetric). Expressions are accepted."))
         form.addRow(_("Peak Position Ratio"), self.peak_ratio)
 
-        self.rise_ratio = QtWidgets.QDoubleSpinBox()
-        self.rise_ratio.setDecimals(2)
-        self.rise_ratio.setSingleStep(0.05)
-        self.rise_ratio.setRange(0.0, 1.0)
-        self.rise_ratio.setValue(self.settings["rise_ratio"])
+        self.rise_ratio = _ratio_field(
+            self.settings["rise_ratio"], decimals=3,
+            minimum=0.0, maximum=1.0, step=0.05, scroll_area=self._scroll)
         form.addRow(_("Rise Height Ratio"), self.rise_ratio)
 
-        self.fall_ratio = QtWidgets.QDoubleSpinBox()
-        self.fall_ratio.setDecimals(2)
-        self.fall_ratio.setSingleStep(0.05)
-        self.fall_ratio.setRange(0.0, 0.60)
-        self.fall_ratio.setValue(self.settings["fall_ratio"])
+        self.fall_ratio = _ratio_field(
+            self.settings["fall_ratio"], decimals=3,
+            minimum=0.0, maximum=0.60, step=0.05, scroll_area=self._scroll)
         form.addRow(_("Fall Height Ratio"), self.fall_ratio)
 
-        self.ball_diameter_um = QtWidgets.QDoubleSpinBox()
-        self.ball_diameter_um.setDecimals(1)
-        self.ball_diameter_um.setRange(1.0, 20000.0)
-        self.ball_diameter_um.setValue(self.settings["ball_diameter"] * 1000.0)
-        self.ball_diameter_um.setSuffix(" µm")
-        form.addRow(_("Bond Ball Diameter"), self.ball_diameter_um)
+        # How far from each pad the entry/exit control point sits. Together with
+        # the rise/fall ratios it fixes the entry and exit angles.
+        self.lead_distance = _length_field(
+            self.settings.get("lead_distance", core.DEFAULT_LEAD_DISTANCE),
+            decimals=4, minimum=0.0, maximum=5.0, step=0.001,
+            scroll_area=self._scroll)
+        self.lead_distance.setToolTip(
+            _("Horizontal distance from each pad to its entry/exit control "
+              "point.\nWith the rise/fall ratios it determines the angle at "
+              "which the wire leaves C1 and lands on C2:\n"
+              "slope = ratio × clearance / distance, so a smaller distance "
+              "gives a steeper approach."))
+        form.addRow(_("Lead Distance"), self.lead_distance)
+
+        # Length of the flat section on top of the loop.
+        self.top_length = _length_field(
+            self.settings.get("top_length", core.DEFAULT_TOP_LENGTH),
+            decimals=4, minimum=0.0, maximum=20.0, step=0.01,
+            scroll_area=self._scroll)
+        self.top_length.setToolTip(
+            _("Length of the flat top of the loop. Between the two lead-in "
+              "points the remaining span is shared, so a longer top means a "
+              "shorter but steeper descent."))
+        form.addRow(_("Top Length"), self.top_length)
+
+        # --- bond bumps: one shape selector per bond point ---
+        # C1 is the first bond point, C2 the second; they may use different
+        # shapes (for example a ball on the chip and a wedge on the substrate).
+        self.start_ball_mode = self._make_mode_combo(
+            self.settings.get("start_ball_mode", core.BUMP_SPHERE))
+        self.start_ball_mode.setToolTip(
+            _("Shape of the bump at the first bond point (C1)."))
+        form.addRow(_("Bond Bump at C1"), self.start_ball_mode)
+
+        self.end_ball_mode = self._make_mode_combo(
+            self.settings.get("end_ball_mode", core.BUMP_SPHERE))
+        self.end_ball_mode.setToolTip(
+            _("Shape of the bump at the second bond point (C2)."))
+        form.addRow(_("Bond Bump at C2"), self.end_ball_mode)
+
+        # kept as the single-shape accessor used elsewhere in the panel
+        self.ball_mode = self.start_ball_mode
+
+        # Field labels are plain QLabels: the shrinkable _wrap_label() used for
+        # the long notes would let the label column collapse to one character
+        # per line, which is unreadable next to a form field.
+        #
+        # diameter row (sphere) -----------------------------------------
+        self.ball_diameter_label = QtWidgets.QLabel(_("Ball Diameter"))
+        self.ball_diameter_um = _length_field(
+            self.settings["ball_diameter"], decimals=4,
+            minimum=0.001, maximum=20.0, step=0.005, scroll_area=self._scroll)
+        self.ball_diameter_um.setToolTip(
+            _("Sphere: the ball diameter. Frustum: the bump height. "
+              "Any length unit works."))
+        form.addRow(self.ball_diameter_label, self.ball_diameter_um)
+
+        # top / bottom rows (frustum) -----------------------------------
+        self.ball_top_label = QtWidgets.QLabel(_("Top Diameter"))
+        self.ball_top_um = _length_field(
+            self.settings.get("ball_top_diameter", core.DEFAULT_BALL_DIAMETER),
+            decimals=4, minimum=0.001, maximum=20.0, step=0.005,
+            scroll_area=self._scroll)
+        self.ball_top_um.setToolTip(
+            _("Frustum: diameter of the end away from the pad."))
+        form.addRow(self.ball_top_label, self.ball_top_um)
+
+        self.ball_bottom_label = QtWidgets.QLabel(_("Bottom Diameter"))
+        self.ball_bottom_um = _length_field(
+            self.settings.get("ball_bottom_diameter",
+                              core.DEFAULT_BALL_DIAMETER),
+            decimals=4, minimum=0.001, maximum=20.0, step=0.005,
+            scroll_area=self._scroll)
+        self.ball_bottom_um.setToolTip(
+            _("Frustum: diameter of the end sitting on the pad."))
+        form.addRow(self.ball_bottom_label, self.ball_bottom_um)
+
+        # show only the rows the selected shape actually uses
+        self._ball_rows = (
+            (self.ball_diameter_label, self.ball_diameter_um, "diameter"),
+            (self.ball_top_label, self.ball_top_um, "top"),
+            (self.ball_bottom_label, self.ball_bottom_um, "bottom"),
+        )
+        self._on_ball_mode_changed()
 
         layout.addWidget(self.section_params)
 
@@ -393,8 +741,15 @@ class WireBondTaskPanel:
         self.show_centreline.setChecked(bool(self.settings["show_centreline"]))
         opt_layout.addWidget(self.show_centreline)
 
+        # The bump shape now lives in the combo box above; this checkbox is a
+        # quick "no bumps at all" switch kept in step with the combo box.
         self.make_balls = QtWidgets.QCheckBox(_("Create bond balls"))
-        self.make_balls.setChecked(bool(self.settings["make_balls"]))
+        self.make_balls.setChecked(
+            core.BUMP_NONE not in self.selected_ball_modes())
+        self.make_balls.toggled.connect(self._on_make_balls_toggled)
+        self.make_balls.setToolTip(
+            _("Quick switch for \"no bumps\"; the shape is chosen under "
+              "Bond Bump in the parameters section."))
         opt_layout.addWidget(self.make_balls)
 
         self.create_plane = QtWidgets.QCheckBox(
@@ -406,12 +761,13 @@ class WireBondTaskPanel:
 
         layout.addWidget(self.section_options)
 
-        if span is not None and self.clearance_um.value() / 1000.0 > span:
+        clearance_mm = get_length_mm(self.clearance_um)
+        if span is not None and clearance_mm > span:
             span_note = _wrap_label(
                 _("Note: the clearance ({:.0f} um) is larger than the centroid "
                   "distance ({:.0f} um);\nthe loop will look exaggerated - "
                   "consider reducing the clearance.").format(
-                    self.clearance_um.value(), span * 1000.0
+                    clearance_mm * 1000.0, span * 1000.0
                 )
             )
             span_note.setStyleSheet("color: #B26500;")
@@ -446,13 +802,23 @@ class WireBondTaskPanel:
         defaults = settings.Settings.defaults()
         settings.clear()
 
-        self.diameter_um.setValue(defaults["wire_diameter"] * 1000.0)
-        self.clearance_um.setValue(defaults["clearance"] * 1000.0)
-        self.ball_diameter_um.setValue(defaults["ball_diameter"] * 1000.0)
-        self.plane_rotation_deg.setValue(defaults["plane_rotation"])
-        self.peak_ratio.setValue(defaults["peak_ratio"])
-        self.rise_ratio.setValue(defaults["rise_ratio"])
-        self.fall_ratio.setValue(defaults["fall_ratio"])
+        set_length_mm(self.diameter_um, defaults["wire_diameter"])
+        set_length_mm(self.clearance_um, defaults["clearance"])
+        set_length_mm(self.ball_diameter_um, defaults["ball_diameter"])
+        set_length_mm(self.ball_top_um, defaults["ball_top_diameter"])
+        set_length_mm(self.ball_bottom_um, defaults["ball_bottom_diameter"])
+        set_length_mm(self.lead_distance, defaults["lead_distance"])
+        set_length_mm(self.top_length, defaults["top_length"])
+        for combo, key in ((self.start_ball_mode, "start_ball_mode"),
+                           (self.end_ball_mode, "end_ball_mode")):
+            index = combo.findData(defaults[key])
+            combo.setCurrentIndex(index if index >= 0 else
+                                  combo.findData(core.BUMP_SPHERE))
+        self._on_ball_mode_changed()
+        set_quantity(self.plane_rotation_deg, defaults["plane_rotation"], "deg")
+        set_number(self.peak_ratio, defaults["peak_ratio"])
+        set_number(self.rise_ratio, defaults["rise_ratio"])
+        set_number(self.fall_ratio, defaults["fall_ratio"])
         self.make_solid.setChecked(bool(defaults["make_solid"]))
         self.show_centreline.setChecked(bool(defaults["show_centreline"]))
         self.make_balls.setChecked(bool(defaults["make_balls"]))
@@ -493,16 +859,32 @@ class WireBondTaskPanel:
 
             wire.Face1 = (obj1, sub1)
             wire.Face2 = (obj2, sub2)
-            wire.WireDiameter = "{} um".format(self.diameter_um.value())
-            wire.Clearance = "{} um".format(self.clearance_um.value())
-            wire.PeakRatio = self.peak_ratio.value()
-            wire.RiseRatio = self.rise_ratio.value()
-            wire.FallRatio = self.fall_ratio.value()
+            # values are read as millimetres and handed over with an explicit
+            # unit, so the object does not depend on the field's display unit
+            current = self.collect_settings()
+            wire.WireDiameter = "{} mm".format(current["wire_diameter"])
+            wire.Clearance = "{} mm".format(current["clearance"])
+            wire.PeakRatio = current["peak_ratio"]
+            wire.RiseRatio = current["rise_ratio"]
+            wire.FallRatio = current["fall_ratio"]
             wire.MakeSolid = self.make_solid.isChecked()
             wire.ShowCentreline = self.show_centreline.isChecked()
-            wire.MakeBalls = self.make_balls.isChecked()
-            wire.BallDiameter = "{} um".format(self.ball_diameter_um.value())
-            wire.PlaneRotation = "{} deg".format(self.plane_rotation_deg.value())
+            wire.BallMode = current["ball_mode"]
+            wire.MakeBalls = current["make_balls"]
+            wire.BallDiameter = "{} mm".format(current["ball_diameter"])
+            if hasattr(wire, "StartBallMode"):
+                wire.StartBallMode = current["start_ball_mode"]
+                wire.EndBallMode = current["end_ball_mode"]
+            if hasattr(wire, "LeadDistance"):
+                wire.LeadDistance = "{} mm".format(current["lead_distance"])
+            if hasattr(wire, "TopLength"):
+                wire.TopLength = "{} mm".format(current["top_length"])
+            if hasattr(wire, "BallTopDiameter"):
+                wire.BallTopDiameter = "{} mm".format(
+                    current["ball_top_diameter"])
+                wire.BallBottomDiameter = "{} mm".format(
+                    current["ball_bottom_diameter"])
+            wire.PlaneRotation = "{} deg".format(current["plane_rotation"])
 
             plane = None
             if self.create_plane.isChecked():
@@ -512,7 +894,7 @@ class WireBondTaskPanel:
                     features.ViewProviderBisectorPlane(plane.ViewObject)
                 plane.Face1 = (obj1, sub1)
                 plane.Face2 = (obj2, sub2)
-                plane.PlaneRotation = "{} deg".format(self.plane_rotation_deg.value())
+                plane.PlaneRotation = "{} deg".format(current["plane_rotation"])
 
             doc.recompute()
 
@@ -523,8 +905,16 @@ class WireBondTaskPanel:
             doc.commitTransaction()
         except Exception as exc:
             doc.abortTransaction()
+            # The message box alone is not enough to diagnose a failure, so the
+            # full traceback also goes to the report view.
+            detail = traceback.format_exc()
+            App.Console.PrintError(
+                "WireBond: failed to create the wire bond.\n" + detail
+            )
             QtWidgets.QMessageBox.critical(
-                None, _("Wire Bond"), _("Failed to create the wire bond:\n{}").format(exc)
+                None, _("Wire Bond"),
+                _("Failed to create the wire bond:\n{}\n\n"
+                  "The full traceback was written to the report view.").format(exc)
             )
             return False
 

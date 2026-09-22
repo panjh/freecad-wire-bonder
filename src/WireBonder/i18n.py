@@ -156,7 +156,75 @@ _ZH = {
         "平分辅助面仅为构造参考, 生成后会隐藏, 可在模型树中手动显示。",
     "No document is open.": "没有打开的文档。",
     "Failed to create the wire bond:\n{}": "生成金线失败:\n{}",
+    "Failed to create the wire bond:\n{}\n\n"
+    "The full traceback was written to the report view.":
+        "生成金线失败:\n{}\n\n完整调用栈已写入报告视图 (Report view)。",
     "Restore Defaults": "恢复默认值",
+    "Bond Bump": "焊球形状",
+    "Bond Bump at C1": "起点焊球 (C1)",
+    "Bond Bump at C2": "终点焊球 (C2)",
+    "Lead Distance": "进出线距离",
+    "Top Length": "平顶长度",
+    "Length of the flat top of the loop. Between the two lead-in "
+    "points the remaining span is shared, so a longer top means a "
+    "shorter but steeper descent.":
+        "弧顶平直段的长度。两个进出线点之间是共享的, 平顶越长则下降段越短越陡。",
+    "Length of the flat section at the top of the loop "
+    "(default 300 um); a longer top leaves a shorter but "
+    "steeper descent":
+        "弧顶平直段长度 (默认 300 µm); 平顶越长, 下降段越短越陡",
+    "Shape of the bump at the first bond point (C1).":
+        "第一个焊点 C1 处的凸点形状。",
+    "Shape of the bump at the second bond point (C2).":
+        "第二个焊点 C2 处的凸点形状。",
+    "Horizontal distance from each pad to its entry/exit control point.\n"
+    "With the rise/fall ratios it determines the angle at which the wire "
+    "leaves C1 and lands on C2:\n"
+    "slope = ratio × clearance / distance, so a smaller distance gives a "
+    "steeper approach.":
+        "每个焊盘到其进出线控制点的水平距离。\n与出线/落线高度比例一起决定金线离开 C1 与落入 C2 的角度:\n"
+        "斜率 = 比例 × 净空高度 / 该距离, 距离越小进出线越陡。",
+    "Shape of the bump at the first bond point (C1)":
+        "第一个焊点 (C1) 处的凸点形状",
+    "Shape of the bump at the second bond point (C2)":
+        "第二个焊点 (C2) 处的凸点形状",
+    "Distance from each pad to its entry/exit control point; "
+    "with the rise/fall ratios it sets the entry and exit "
+    "angles (default 10 um)":
+        "每个焊盘到其进出线控制点的距离; 与出线/落线高度比例一起决定进出线角度 (默认 10 µm)",
+    "None": "无",
+    "Sphere": "球形",
+    "Frustum": "圆台",
+    "Ball Diameter": "焊球直径",
+    "Ball Top Diameter": "圆台上底直径",
+    "Ball Bottom Diameter": "圆台下底直径",
+    "Top Diameter": "上底直径",
+    "Bottom Diameter": "下底直径",
+    "Shape of the bump at each bond point: none, a ball bond (sphere), or a "
+    "truncated cone (frustum).":
+        "每个焊点处的凸点形状: 无 / 球形 (ball bond) / 圆台 (截锥)。",
+    "Sphere: the ball diameter. Frustum: the bump height. Any length unit "
+    "works.":
+        "球形时为球径; 圆台时为凸点高度。支持任意长度单位。",
+    "Frustum: diameter of the end away from the pad.":
+        "圆台: 远离焊盘那一端的直径 (上底)。",
+    "Frustum: diameter of the end sitting on the pad.":
+        "圆台: 贴着焊盘那一端的直径 (下底)。",
+    "Quick switch for \"no bumps\"; the shape is chosen under "
+    "Bond Bump in the parameters section.":
+        "快捷开关, 取消即\"不生成凸点\"; 具体形状在参数区的「焊球形状」中选择。",
+    "Bond bump shape: none / sphere (ball bond) / "
+    "frustum (truncated cone)":
+        "焊点凸起形状: 无 / 球形 (ball bond) / 圆台 (截锥)",
+    "Ball diameter (default 50 um); for a frustum it is the bump height":
+        "焊球直径 (默认 50 µm); 圆台时表示凸点高度",
+    "Frustum: diameter of the end away from the pad":
+        "圆台: 远离焊盘那一端的直径 (上底)",
+    "Frustum: diameter of the end sitting on the pad":
+        "圆台: 贴着焊盘那一端的直径 (下底)",
+    "Legacy switch: unchecking it is the same as setting "
+    "Bond Shape to none":
+        "兼容用开关: 取消勾选等同于把焊球形状设为「无」",
     "Reset the panel to the built-in defaults and forget the stored settings.":
         "把面板恢复为内置默认值, 并清除已保存的设置。",
     "Note: a 20 um gold wire is usually invisible at assembly scale, so only "

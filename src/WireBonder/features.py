@@ -68,10 +68,49 @@ class WireBondFeature:
                         "diameters)"), False)
         _add_property(obj, "App::PropertyBool", "ShowCentreline", "WireBond",
                       _("Also show the wire centreline"), True)
+        # A PropertyEnumeration stores its choices when a *list* is assigned,
+        # and its current value when a *string* is assigned - so the list has to
+        # come first. Read the choices back with
+        # ``obj.getEnumerationsOfProperty("BallMode")``; ``list(obj.BallMode)``
+        # would iterate the current value string instead.
+        _add_property(obj, "App::PropertyEnumeration", "BallMode", "WireBond",
+                      _("Bond bump shape: none / sphere (ball bond) / "
+                        "frustum (truncated cone)"))
+        obj.BallMode = list(core.BUMP_MODES)
+        obj.BallMode = core.BUMP_SPHERE
+        # Per-end shape: C1 (first bond point) and C2 (second bond point) may
+        # differ. ``BallMode`` acts as the default for both, so older documents
+        # and scripts keep working unchanged.
+        _add_property(obj, "App::PropertyEnumeration", "StartBallMode", "WireBond",
+                      _("Shape of the bump at the first bond point (C1)"))
+        obj.StartBallMode = list(core.BUMP_MODES)
+        obj.StartBallMode = core.BUMP_SPHERE
+        _add_property(obj, "App::PropertyEnumeration", "EndBallMode", "WireBond",
+                      _("Shape of the bump at the second bond point (C2)"))
+        obj.EndBallMode = list(core.BUMP_MODES)
+        obj.EndBallMode = core.BUMP_SPHERE
+        _add_property(obj, "App::PropertyLength", "LeadDistance", "WireBond",
+                      _("Distance from each pad to its entry/exit control point; "
+                        "with the rise/fall ratios it sets the entry and exit "
+                        "angles (default 10 um)"),
+                      core.DEFAULT_LEAD_DISTANCE)
+        _add_property(obj, "App::PropertyLength", "TopLength", "WireBond",
+                      _("Length of the flat section at the top of the loop "
+                        "(default 300 um); a longer top leaves a shorter but "
+                        "steeper descent"),
+                      core.DEFAULT_TOP_LENGTH)
         _add_property(obj, "App::PropertyBool", "MakeBalls", "WireBond",
-                      _("Create bond balls at the two bond points"), True)
+                      _("Legacy switch: unchecking it is the same as setting "
+                        "Bond Shape to none"), True)
         _add_property(obj, "App::PropertyLength", "BallDiameter", "WireBond",
-                      _("Bond ball diameter (default 50 um)"),
+                      _("Ball diameter (default 50 um); for a frustum it is "
+                        "the bump height"),
+                      core.DEFAULT_BALL_DIAMETER)
+        _add_property(obj, "App::PropertyLength", "BallTopDiameter", "WireBond",
+                      _("Frustum: diameter of the end away from the pad"),
+                      core.DEFAULT_BALL_DIAMETER)
+        _add_property(obj, "App::PropertyLength", "BallBottomDiameter", "WireBond",
+                      _("Frustum: diameter of the end sitting on the pad"),
                       core.DEFAULT_BALL_DIAMETER)
         _add_property(obj, "App::PropertyAngle", "PlaneRotation", "WireBond",
                       _("Rotation of the wire plane about the centroid line "
@@ -101,6 +140,19 @@ class WireBondFeature:
             make_solid=bool(obj.MakeSolid),
             make_balls=bool(obj.MakeBalls),
             ball_diameter=float(obj.BallDiameter),
+            ball_mode=getattr(obj, "BallMode", core.BUMP_SPHERE),
+            top_diameter=float(getattr(obj, "BallTopDiameter",
+                                       obj.BallDiameter)),
+            bottom_diameter=float(getattr(obj, "BallBottomDiameter",
+                                          obj.BallDiameter)),
+            start_ball_mode=getattr(obj, "StartBallMode",
+                                    getattr(obj, "BallMode", core.BUMP_SPHERE)),
+            end_ball_mode=getattr(obj, "EndBallMode",
+                                  getattr(obj, "BallMode", core.BUMP_SPHERE)),
+            lead_distance=float(getattr(obj, "LeadDistance",
+                                        core.DEFAULT_LEAD_DISTANCE)),
+            top_length=float(getattr(obj, "TopLength",
+                                     core.DEFAULT_TOP_LENGTH)),
             rotation_deg=obj.PlaneRotation.getValueAs("deg"),
         )
 
@@ -109,7 +161,7 @@ class WireBondFeature:
             shapes.append(result["solid"])
         if result["solid"] is None or obj.ShowCentreline:
             shapes.append(result["centre_line"])
-        shapes.extend(result["balls"])  # the bond balls at the two bond points
+        shapes.extend(result["balls"])  # the bond bumps at the two bond points
 
         obj.Shape = shapes[0] if len(shapes) == 1 else Part.makeCompound(shapes)
 

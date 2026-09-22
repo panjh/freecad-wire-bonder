@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """WireBonder: a wire bonding helper addon for FreeCAD.
 
 Select any two faces and the addon will
@@ -11,7 +11,7 @@ Select any two faces and the addon will
 The wire diameter and the clearance stay fully parametric.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.10.1"
 __all__ = [
     "core",
     "features",

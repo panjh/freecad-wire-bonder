@@ -1,4 +1,4 @@
-# WireBonder 设计文档（PRD）
+﻿# WireBonder 设计文档（PRD）
 
 > FreeCAD 打线（Wire Bonding）辅助插件 —— 由两个选中平面自动构造平分平面，并在其内生成连接两个质心的金线（打线弧）
 
@@ -101,6 +101,11 @@
 | FR-19 | **面板记住上次设置**：OK 后持久化，下次打开自动回填；提供「恢复默认值」 | 中 | 已实现（v0.4.0） |
 | FR-20 | **面板可滚动**：内容超出可用高度时出现垂直滚动条，任何控件不被截断；宽度自适应，不出现横向滚动条 | 中 | 已实现（v0.5.0） |
 | FR-21 | **分组可折叠**：选中的平面 / 金线参数 / 输出选项三个分组点击标题即可折叠，折叠状态被记住且独立于「恢复默认值」 | 中 | 已实现（v0.5.0） |
+| FR-22 | **参数输入框复用属性视图的控件**（`Gui::QuantitySpinBox`）：可自由切换单位、可输入表达式、滚轮悬停不改变数值 | 中 | 已实现（v0.7.0） |
+| FR-23 | **焊点凸起形状可选**：下拉框选择 无 / 球形 / 圆台；面板字段随选择动态显隐 | 中 | 已实现（v0.8.0） |
+| FR-24 | **两端形状可独立设置**：起点（C1）与终点（C2）各一个下拉框；面板按两端合并显示所需字段 | 中 | 已实现（v0.9.0） |
+| FR-25 | **进出线距离可设置**（默认 10 µm）：用绝对距离定位控制点 2 与 6，使进出线角度只由高度比例与该距离决定，与连线长度解耦 | 中 | 已实现（v0.9.0） |
+| FR-26 | **线形贴近真实打线轮廓**（平顶 + 长直下降）：8 个控制点，平顶由 3 点支撑，下降段中间点与两端共线使其成为真正的直线；新增「平顶长度」参数（默认 200 µm） | 高 | 已实现（v0.10.0） |
 
 ### 4.1 FR-2 的几何定义（精确表述）
 
@@ -130,18 +135,19 @@ z' = Rot(x, θ) · z
 
 ### 4.2 FR-3 的打线弧轮廓
 
-弧线在局部坐标下的 **7 个**控制点（`L` 为连线长度，`H` 为净空高度，`p` 为拱顶位置比例，
-`tail = L − p·L`）——弧顶居中，左右各 3 个点：
+弧线在局部坐标下的 **8 个**控制点（`L` 为连线长度，`H` 为净空高度，`p` 为平顶位置比例，
+`top` 为平顶长度）：
 
 | 序号 | u 坐标 | v（高度） | 作用 |
 | --- | --- | --- | --- |
 | 1 | `0` | `0` | 第一焊点（C1） |
-| 2 | `0.12·p·L` | `rise·H` | 出线陡升，模拟劈刀抬起 |
-| 3 | `0.50·p·L` | `0.92·H` | 上升段 |
-| 4 | `p·L` | `H` | **弧顶** |
-| 5 | `p·L + 0.38·tail` | `0.86·H` | 下降段 |
-| 6 | `p·L + 0.78·tail` | `fall·H` | 落线姿态 |
-| 7 | `L` | `0` | 第二焊点（C2） |
+| 2 | `lead`（进出线距离，默认 10 µm） | `rise·H` | 出线点，模拟劈刀抬起 |
+| 3 | `p·L − top/2` | `H` | **平顶起点** |
+| 4 | `p·L` | `H` | **平顶中点** |
+| 5 | `p·L + top/2` | `H` | **平顶终点** |
+| 6 | 5 与 7 的中点 | 落在 5→7 直线上 | 下降段中点（**与两端共线**） |
+| 7 | `L − lead`（进出线距离） | `fall·H` | 落线点 |
+| 8 | `L` | `0` | 第二焊点（C2） |
 
 控制点经 `Part.BSplineCurve.interpolate()` 插值成**穿过所有控制点**的平滑样条；随后映射回三维：`P(u, v) = C1 + u·x + v·y`。
 
@@ -291,7 +297,14 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 | `MakeSolid` | `App::PropertyBool` | False | — | 是否生成金线实体 |
 | `ShowCentreline` | `App::PropertyBool` | True | — | 是否同时显示中心线 |
 | `MakeBalls` | `App::PropertyBool` | True | — | 是否生成焊球 |
-| `BallDiameter` | `App::PropertyLength` | 0.05 | mm | 焊球直径（**50 µm**） |
+| `BallMode` | `App::PropertyEnumeration` | `sphere` | — | 凸起形状（旧属性，两端相同时有效）：`none` / `sphere` / `frustum` |
+| `StartBallMode` | `App::PropertyEnumeration` | `sphere` | — | C1 处的凸起形状 |
+| `EndBallMode` | `App::PropertyEnumeration` | `sphere` | — | C2 处的凸起形状 |
+| `LeadDistance` | `App::PropertyLength` | 0.01 | mm | 焊盘到进出线控制点的水平距离（**10 µm**） |
+| `TopLength` | `App::PropertyLength` | 0.20 | mm | 平顶平直段长度（**200 µm**） |
+| `BallDiameter` | `App::PropertyLength` | 0.05 | mm | 球径（球形）或凸点高度（圆台） |
+| `BallTopDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台远离焊盘一端的直径 |
+| `BallBottomDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台贴着焊盘一端的直径 |
 | `PlaneRotation` | `App::PropertyAngle` | 0° | — | 走线平面绕两质心连线的偏转角（0° = 与原平分平面重合） |
 
 `Shape` 的构成取决于参数：
@@ -618,3 +631,9 @@ face_global = face.transformed(extra.toMatrix())
 | v0.4.0 | 2026-09-22 | 新增**面板参数持久化**（`WireBonder/settings.py`）：OK 后把 11 项参数写入 `User parameter:BaseApp/Preferences/Mod/WireBonder`，下次打开面板自动回填；新增「恢复默认值」按钮；注意 `ParamGet` 数值/布尔需分别用 `RemFloat` / `RemBool` 删除 |
 | v0.5.0 | 2026-09-22 | **面板可滚动 + 分组可折叠**：外层套 `QScrollArea`（`setWidgetResizable(True)`，禁用横向滚动条）；新增 `CollapsibleBox` 取代 `QGroupBox`（`QGroupBox` 的 checkable 只能禁用内容、无法隐藏）；折叠状态持久化为 `ui_show_*` 并与几何参数分开保存。规避两个 Qt 陷阱：自动换行 `QLabel` 的 `minimumSizeHint` 等于最长单词宽度会撑宽面板，需 `setMinimumWidth(1)`；`setChecked()` 发出的 `toggled` 信号会与程序化状态更新互相递归，需 `blockSignals` 隔离 |
 | v0.6.0 | 2026-09-22 | **打线弧控制点由 8 个减为 7 个**（弧顶居中、左右各 3 个）：取消原第 6 个下降点，落线点由 `0.92·tail` 前移至 `0.78·tail`，末段坡度从 1.56–6.25 降到 0.57–2.27，**越过 C2 的过冲完全消除**（原 8 点方案在 `PeakRatio = 0.60/0.80` 时分别为 0.00575/0.02416 mm）。形状系数抽为 `RISE_POSITION` / `MID_RISE_POSITION` / `DESCENT_POSITION` / `FALL_POSITION` 等模块常量，并与 `scripts/plot_peak_ratio.py`、参数文档保持一致。代价：落线不再垂直（`PeakRatio = 0.42` 约 +48°），可用「落线高度比例」调节 |
+| v0.7.0 | 2026-09-22 | **数值输入改用 `Gui::QuantitySpinBox`**（与属性视图同款控件）：① **自由切换单位** —— 单位随值存储，可直接输入 `20 um` / `0.02 mm` / `1 thou`，长度与角度各用对应的量纲；② **表达式求值** —— `10*2`、`5um*4`、`Spreadsheet` 引用均可；③ **滚轮不再误改数值** —— `_WheelGuard` 事件过滤器拦截 `QEvent.Wheel` 并转交给面板的滚动区。三个实现要点：`installEventFilter()` 不接管对象所有权，过滤器必须挂到控件上作子对象否则会被 GC；必须用 `App.Units`（模块把 FreeCAD 别名为 `App`，写成 `FreeCAD.Units` 会抛 `NameError` 并被兜底静默吞掉，导致单位丢失、`0.001 in` 被当成 0.001 mm）；`setProperty("value", ...)` 之后**不能**调用 `interpretText()`，它会用滞后的输入框文本覆盖新值 |
+| v0.8.0 | 2026-09-22 | **焊点凸起改为三态可选**（新增 `core.bond_bumps()`）：`none` / `sphere` / `frustum`。球形沿用 `Part.makeSphere`；圆台用 `Part.makeCone(bottom_r, top_r, height, centre, axis, 360)` 生成截锥，并**沿该焊盘的外法线定向**（实测法线 +Z 时 `z[0, 0.05]`、−Z 时 `z[-0.05, 0]`）。体积校验：球 φ50 µm = `0.000065450 mm³`、圆台 φ80→φ30 × 高 50 µm = `0.000126973 mm³`，与解析式完全一致。面板新增「焊球形状」下拉框并**按选择动态显隐**直径字段（无→全隐藏；球形→仅球径；圆台→上下底直径）；原「生成焊球」复选框保留为快捷开关，与下拉框双向联动（取消→无、重勾→恢复上次形状）。`settings.py` 新增字符串类型持久化以保存 `BallMode`。踩坑：`PropertyEnumeration` 必须**先赋选项列表再赋当前值**，且读取选项要用 `getEnumerationsOfProperty()`——`list(obj.BallMode)` 会迭代当前值字符串，产生 `['s','p','h','e','r','e']` 的假象 |
+| v0.9.0 | 2026-09-22 | **两端形状独立 + 进出线距离**。① `core.bond_bumps` 的两端可分别指定形状（`start_ball_mode` / `end_ball_mode`），新增 `StartBallMode` / `EndBallMode` 两个枚举属性与面板上的两个下拉框；共用的直径字段按两端合并显示（任一端为球形则显示球径、任一端为圆台则显示上下底）。② 新增 `LeadDistance`（默认 **10 µm**），用**绝对距离**定位第 2、第 6 控制点（`p2.u = lead`、`p6.u = L − lead`），使进出线角度只由高度比例与该距离决定、与连线长度解耦；实测 lead 2/10/50 µm 对应出线斜率 150/30/6，出线角 −23.4°/−21.9°/−14.5°。③ 该距离自动夹紧到 `peak_u`/`tail` 的 45% 以内，保证 7 个控制点顺序合法（实测 lead=10 mm + peak_ratio=0.10 时夹到 0.09 mm）。踩坑：`_last_ball_modes` 是 `(start, end)` 元组，恢复时必须逐端解包，否则复选框重勾后两端都停在 `none` |
+| v0.9.1 | 2026-09-22 | **修正面板字段标签**。① 字段标签不再使用可收缩的 `_wrap_label()`（它是给长注释用的，会把标签列压到一行一个字），改用普通 `QLabel`；实测标签恢复为 58×31 px 单行；② 标签精简为「上底直径」「下底直径」（原「圆台上底直径」过长）。这是 v0.9.0 引入两个下拉框后暴露的显示问题 |
+| v0.10.0 | 2026-09-22 | **线形改为真实打线轮廓（平顶 + 长直下降）**，依据 `data/wire-sketch.png` 与 `data/sketch-params.png`。控制点由 7 个改为 **8 个**：平顶由 **3 个点**支撑（此前 2 点，样条在过渡处上拱，实测最高点超出设定净空 **6.8%**，3 点后降到 **1.8%**，使「净空高度」参数可信）；下降段中间点**与两端共线**，利用三点共线使自然样条二阶导数为零的性质让下降段成为**真正的直线**（实测偏离直线 RMS 约 3 um）。新增参数 `TopLength`（平顶长度，默认 **200 µm**，贴近参考图的 `0.3·L`，自动夹紧到跨度的 45%）；`FallRatio` 默认由 0.20 改为 **0.12** 以进一步压平下降段。新增两个对照/扫描脚本：`scripts/compare_profile.py`（按参考图比例出图并打印平顶跨度、下降斜率、偏离直线比例）与 `scripts/scan_top_length.py`（平顶长度 x 跨度网格扫描） |
+| v0.10.1 | 2026-09-22 | **修复两个缺陷并改善报错可诊断性**。① 平顶平台未受峰值位置约束：`u3 = peak_u − top/2` 在 `peak_ratio` 较小（如 0.05）或较大（0.90）时会落到 C1 之前/落线点之后，使 8 个控制点的 u 不再递增（实测 1680 组参数中有 421 组非法，最坏情况出现 `u3 = 0` 甚至负值）。改为**双侧夹紧**：`half_top = min(top/2, 0.45L/2, min(peak_u − lead, (L − lead) − peak_u) × 0.98)`，取两侧可用空间较小者并留 2% 余量；复测 **1680 组全部合法**。② `_restore_defaults()` 中 `LeadDistance` 被重复设置了一行（插入新字段时的冗余），已清理。③ `accept()` 的异常分支现在把完整调用栈写入 Report view（此前只弹一句异常文字，难以定位）；报错文案相应更新 |

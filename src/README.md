@@ -121,12 +121,18 @@ Gui.activateWorkbench("WireBonderWorkbench")
 | Parameter | Default | Description |
 | --- | --- | --- |
 | Wire Diameter | 20 µm | Sweep section diameter, i.e. the gold wire diameter |
-| Clearance | 500 µm | Height of the loop peak **above the centroid line** |
+| Clearance | 500 µm | Height of the flat top **above the centroid line** |
 | Wire Plane Rotation | 0° | Rotation of the wire plane about the centroid line (−180°~180°); **0° is coincident with the bisector plane** |
-| Peak Position Ratio | 0.42 | Loop peak position as a ratio of the centroid distance (0.05–0.95) |
+| Peak Position Ratio | 0.42 | Position of the flat top as a ratio of the centroid distance (0.05–0.95) |
 | Rise Height Ratio | 0.60 | Height ratio of the steep rise point near the start, mimicking the wire bonder |
-| Fall Height Ratio | 0.20 | Height ratio near the landing point, controlling the landing attitude |
-| Bond Ball Diameter | 50 µm | Diameter of the bond ball at each bond point (about 2.5× the wire diameter) |
+| Fall Height Ratio | 0.12 | Height ratio near the landing point; kept low so the descent stays straight |
+| Bond Bump at C1 | Sphere | Shape at the first bond point: **none / sphere / frustum** |
+| Bond Bump at C2 | Sphere | Shape at the second bond point; may differ from C1 (e.g. ball on the chip, frustum on the substrate) |
+| Lead Distance | 10 µm | Horizontal distance from each pad to its entry/exit control point; with the height ratios it sets the entry and exit angles |
+| Top Length | 200 µm | Length of the flat top of the loop; a longer top leaves a shorter but steeper descent |
+| Ball Diameter | 50 µm | Sphere: the ball diameter (about 2.5× the wire diameter). Frustum: the bump height |
+| Ball Top Diameter | 50 µm | Frustum: diameter of the end away from the pad (shown for frustum only) |
+| Ball Bottom Diameter | 50 µm | Frustum: diameter of the end on the pad (shown for frustum only) |
 | Create the gold wire solid | No | Produces a solid with the real diameter; sweeping is slow for tiny diameters |
 | Also show the centreline | Yes | Also visible when only the centreline is generated, handy for small diameters |
 | Create bond balls | Yes | Creates a ball at each centroid; the diameter comes from "Bond Ball Diameter" |
@@ -138,6 +144,23 @@ Gui.activateWorkbench("WireBonderWorkbench")
 > and every checkbox. Use the **Restore Defaults** button at the bottom of the panel to go back to the
 > built-in values (it also clears the stored settings), or delete them manually under
 > **Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder**.
+
+### Parameter input fields
+
+Every numeric field is a **`Gui::QuantitySpinBox`** - the same widget the FreeCAD property
+editor uses - so it brings three conveniences with it:
+
+- **free unit switching**: the unit is part of the value, so you can type `0.02 mm`, `20 um`
+  or `1 thou` and the display follows (the context menu also offers conversions). The length
+  fields (Wire Diameter, Clearance, Bond Ball Diameter) accept any length unit; the angle
+  field (Wire Plane Rotation) accepts `deg` / `rad`;
+- **expressions**: evaluated on commit, e.g. `10*2`, `0.25*2`, `5um*4`, or a reference to a
+  `Spreadsheet` cell;
+- **scrolling over a field does not change its value** (the native behaviour would): the wheel
+  event is handed to the panel instead, so the panel still scrolls under the cursor.
+
+The dimensionless ratio fields (Peak Position Ratio, Rise Height Ratio, Fall Height Ratio)
+accept expressions as well.
 
 ### Panel layout
 
