@@ -1,0 +1,5 @@
+/.roo
+/docs/*.docx
+/test
+__pycache__
+/context

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>WireBonder</name>
+  <description>Wire bonding helper: build the bisector plane of two selected faces and sweep a gold wire (configurable diameter and clearance) along the loop profile between the two face centroids.</description>
+  <version>0.3.0</version>
+  <date>2026-09-21</date>
+  <maintainer email="noreply@example.com">Edison</maintainer>
+  <license>LGPL-2.1-or-later</license>
+  <icon>WireBonder/resources/icons/WireBonder.svg</icon>
+  <content>
+    <workbench>
+      <classname>WireBonderWorkbench</classname>
+      <subdirectory>./</subdirectory>
+      <icon>WireBonder/resources/icons/WireBonder.svg</icon>
+      <description>Wire bonding helper workbench</description>
+      <tags>wire bonding, gold wire, sweep, bisector plane</tags>
+    </workbench>
+  </content>
+</package>
