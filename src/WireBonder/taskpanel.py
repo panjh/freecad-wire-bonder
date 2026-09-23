@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Task panel: collect wire diameter, clearance and related parameters, then create the wire bond."""
+"""Task panel: collect the wire parameters (diameter, loop control points, ...) and create the wire bond."""
 
 import traceback
 
@@ -301,6 +301,110 @@ class CollapsibleBox(QtWidgets.QWidget):
         self._on_state_changed = callback
 
 
+class LoopPointsEditor(QtWidgets.QWidget):
+    """Table editor for the wire loop control points.
+
+    Each row is one interior control point: a dimensionless position ratio along
+    the centroid line and a height in millimetres above it. One row is therefore
+    the classic apex (the old ``PeakRatio`` + ``Clearance``); more rows build a
+    ``4 + N`` point spline, which is what allows a flat top or a straight descent
+    to be described.
+
+    The fields are FreeCAD ``Gui::QuantitySpinBox`` widgets, exactly like the
+    rest of the panel, so any length unit and expressions such as ``0.2+0.05``
+    work in the height column. The row order is irrelevant - the points are
+    sorted by ratio when the geometry is built.
+    """
+
+    def __init__(self, points, scroll_area=None, parent=None):
+        super().__init__(parent)
+        self._scroll = scroll_area
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        self.table = QtWidgets.QTableWidget(0, 2, self)
+        self.table.setHorizontalHeaderLabels(
+            [_("Position Ratio"), _("Height")])
+        self.table.verticalHeader().setVisible(False)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        self.table.setMinimumHeight(96)
+        layout.addWidget(self.table)
+
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        self.add_button = QtWidgets.QPushButton(_("Add Point"))
+        self.add_button.setToolTip(
+            _("Append another control point; the loop becomes a 4+N point "
+              "spline."))
+        self.add_button.clicked.connect(self.add_point)
+        self.remove_button = QtWidgets.QPushButton(_("Remove Point"))
+        self.remove_button.setToolTip(
+            _("Remove the selected control point (at least one is kept)."))
+        self.remove_button.clicked.connect(self.remove_point)
+        buttons.addWidget(self.add_button)
+        buttons.addWidget(self.remove_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        self.set_points(points)
+
+    # ------------------------------------------------------------------
+    def _append_row(self, ratio, height):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setCellWidget(row, 0, _quantity_field(
+            ratio, "", decimals=3, minimum=0.0, maximum=1.0, step=0.05,
+            scroll_area=self._scroll))
+        self.table.setCellWidget(row, 1, _length_field(
+            height, decimals=4, minimum=0.0, maximum=100.0, step=0.01,
+            scroll_area=self._scroll))
+        self.table.resizeRowToContents(row)
+
+    def set_points(self, points):
+        """Replace the table contents with ``points`` (text or sequence)."""
+        if isinstance(points, str):
+            points = core.parse_loop_points(points)
+        points = list(points or [])
+        if not points:
+            points = list(core.DEFAULT_LOOP_POINTS)
+        self.table.setRowCount(0)
+        for ratio, height in points:
+            self._append_row(ratio, height)
+
+    def points(self):
+        """Return the current ``(ratio, height_mm)`` pairs, in table order."""
+        result = []
+        for row in range(self.table.rowCount()):
+            ratio_spin = self.table.cellWidget(row, 0)
+            height_spin = self.table.cellWidget(row, 1)
+            if ratio_spin is None or height_spin is None:
+                continue
+            result.append((get_number(ratio_spin), get_length_mm(height_spin)))
+        return tuple(result)
+
+    def add_point(self):
+        rows = self.table.rowCount()
+        ratio, height = core.DEFAULT_LOOP_POINTS[0]
+        if rows:
+            ratio_spin = self.table.cellWidget(rows - 1, 0)
+            height_spin = self.table.cellWidget(rows - 1, 1)
+            if ratio_spin is not None and height_spin is not None:
+                ratio = min(get_number(ratio_spin) + 0.2, 1.0)
+                height = get_length_mm(height_spin)
+        self._append_row(ratio, height)
+
+    def remove_point(self):
+        if self.table.rowCount() <= 1:      # always keep the apex
+            return
+        row = self.table.currentRow()
+        if row < 0:
+            row = self.table.rowCount() - 1
+        self.table.removeRow(row)
+
+
 def containing_body(obj):
     """Return the innermost PartDesign::Body containing the object (None when not inside a Body).
 
@@ -344,14 +448,14 @@ class WireBondTaskPanel:
         start_mode, end_mode = self.selected_ball_modes()
         return {
             "wire_diameter": get_length_mm(self.diameter_um),
-            "clearance": get_length_mm(self.clearance_um),
+            "loop_points": core.format_loop_points(
+                core.normalise_loop_points(self.loop_points.points())),
             "ball_diameter": get_length_mm(self.ball_diameter_um),
             "start_ball_mode": start_mode,
             "end_ball_mode": end_mode,
             "frustum_top_diameter": get_length_mm(self.frustum_top_um),
             "frustum_bottom_diameter": get_length_mm(self.frustum_bottom_um),
             "plane_rotation": get_quantity(self.plane_rotation_deg, "deg"),
-            "peak_ratio": get_number(self.peak_ratio),
             "rise_angle": get_quantity(self.rise_angle, "deg"),
             "fall_angle": get_quantity(self.fall_angle, "deg"),
             "lead_distance": get_length_mm(self.lead_distance),
@@ -540,13 +644,19 @@ class WireBondTaskPanel:
               "expressions such as 0.01*2 are accepted."))
         form.addRow(_("Wire Diameter"), self.diameter_um)
 
-        self.clearance_um = _length_field(
-            self.settings["clearance"], decimals=4,
-            minimum=0.0, maximum=100.0, step=0.01, scroll_area=self._scroll)
-        self.clearance_um.setToolTip(
-            _("Loop height above the centroid line, e.g. 0.5 mm or 500 um. "
-              "Any length unit works."))
-        form.addRow(_("Clearance"), self.clearance_um)
+        # The loop shape is a list of control points rather than a single height:
+        # one point is the classic apex, more points build a 4+N point spline.
+        self.loop_points = LoopPointsEditor(
+            self.settings.get("loop_points", core.DEFAULT_LOOP_POINTS),
+            scroll_area=self._scroll)
+        self.loop_points.table.setToolTip(
+            _("Loop control points: each row is a position ratio (0 = first pad, "
+              "1 = second pad) and a height above the horizontal plane of the "
+              "first pad.\n"
+              "One row is the apex - the old Clearance + PeakRatio. Add rows to "
+              "shape a flat top or a straight descent.\nAny length unit works "
+              "for the height."))
+        form.addRow(_("Loop Points"), self.loop_points)
 
         self.plane_rotation_deg = _angle_field(
             self.settings["plane_rotation"], decimals=2,
@@ -558,32 +668,24 @@ class WireBondTaskPanel:
         )
         form.addRow(_("Wire Plane Rotation"), self.plane_rotation_deg)
 
-        self.peak_ratio = _ratio_field(
-            self.settings["peak_ratio"], decimals=3,
-            minimum=0.05, maximum=0.95, step=0.05, scroll_area=self._scroll)
-        self.peak_ratio.setToolTip(
-            _("Position of the loop peak along the centroid line, as a ratio "
-              "(0.5 = symmetric). Expressions are accepted."))
-        form.addRow(_("Peak Position Ratio"), self.peak_ratio)
-
         # Angles, not height ratios: 0 deg points along the line between the
         # pads, 90 deg is perpendicular to it (straight up).
         self.rise_angle = _angle_field(
             self.settings["rise_angle"], decimals=1,
-            minimum=0.0, maximum=89.0, step=5.0, scroll_area=self._scroll)
+            minimum=0.0, maximum=180.0, step=5.0, scroll_area=self._scroll)
         self.rise_angle.setToolTip(
             _("Angle at which the wire leaves the first pad, measured from the "
-              "line between the pads.\n0 deg = along that line towards the "
-              "second pad, 90 deg = perpendicular (straight up)."))
+              "horizontal plane.\n0 deg = level, towards the second pad; "
+              "90 deg = straight up."))
         form.addRow(_("Rise Angle"), self.rise_angle)
 
         self.fall_angle = _angle_field(
             self.settings["fall_angle"], decimals=1,
-            minimum=0.0, maximum=89.0, step=5.0, scroll_area=self._scroll)
+            minimum=0.0, maximum=180.0, step=5.0, scroll_area=self._scroll)
         self.fall_angle.setToolTip(
-            _("Angle at which the wire reaches the second pad, measured from "
-              "the line between the pads.\n0 deg = along that line towards the "
-              "first pad, 90 deg = perpendicular (straight up)."))
+            _("Angle at which the wire reaches the second pad, measured from the "
+              "horizontal plane.\n0 deg = level, towards the first pad; "
+              "90 deg = straight up."))
         form.addRow(_("Fall Angle"), self.fall_angle)
 
         # How far from each pad the entry/exit control point sits. Together with
@@ -593,11 +695,9 @@ class WireBondTaskPanel:
             decimals=4, minimum=0.0, maximum=5.0, step=0.001,
             scroll_area=self._scroll)
         self.lead_distance.setToolTip(
-            _("Horizontal distance from each pad to its entry/exit control "
-              "point.\nWith the rise/fall ratios it determines the angle at "
-              "which the wire leaves C1 and lands on C2:\n"
-              "slope = ratio × clearance / distance, so a smaller distance "
-              "gives a steeper approach."))
+            _("Distance from each pad to its entry/exit control point, measured "
+              "along the rise/fall ray.\nIt sets how far the straight lead-in "
+              "and lead-out run before the loop points take over."))
         form.addRow(_("Lead Distance"), self.lead_distance)
 
         # --- bond bumps: one shape selector per bond point ---
@@ -688,13 +788,17 @@ class WireBondTaskPanel:
 
         layout.addWidget(self.section_options)
 
-        clearance_mm = get_length_mm(self.clearance_um)
-        if span is not None and clearance_mm > span:
+        heights = [height for _ratio, height
+                   in core.normalise_loop_points(
+                       self.settings.get("loop_points",
+                                         core.DEFAULT_LOOP_POINTS))]
+        max_height = max(heights) if heights else 0.0
+        if span is not None and max_height > span:
             span_note = _wrap_label(
-                _("Note: the clearance ({:.0f} um) is larger than the centroid "
+                _("Note: a loop point is {:.0f} um high, more than the centroid "
                   "distance ({:.0f} um);\nthe loop will look exaggerated - "
-                  "consider reducing the clearance.").format(
-                    clearance_mm * 1000.0, span * 1000.0
+                  "consider reducing the loop point heights.").format(
+                    max_height * 1000.0, span * 1000.0
                 )
             )
             span_note.setStyleSheet("color: #B26500;")
@@ -730,7 +834,7 @@ class WireBondTaskPanel:
         settings.clear()
 
         set_length_mm(self.diameter_um, defaults["wire_diameter"])
-        set_length_mm(self.clearance_um, defaults["clearance"])
+        self.loop_points.set_points(defaults["loop_points"])
         set_length_mm(self.ball_diameter_um, defaults["ball_diameter"])
         set_length_mm(self.frustum_top_um, defaults["frustum_top_diameter"])
         set_length_mm(self.frustum_bottom_um, defaults["frustum_bottom_diameter"])
@@ -742,7 +846,6 @@ class WireBondTaskPanel:
                                   combo.findData(core.BUMP_SPHERE))
         self._on_ball_mode_changed()
         set_quantity(self.plane_rotation_deg, defaults["plane_rotation"], "deg")
-        set_number(self.peak_ratio, defaults["peak_ratio"])
         set_quantity(self.rise_angle, defaults["rise_angle"], "deg")
         set_quantity(self.fall_angle, defaults["fall_angle"], "deg")
         self.make_solid.setChecked(bool(defaults["make_solid"]))
@@ -788,8 +891,7 @@ class WireBondTaskPanel:
             # unit, so the object does not depend on the field's display unit
             current = self.collect_settings()
             wire.WireDiameter = "{} mm".format(current["wire_diameter"])
-            wire.Clearance = "{} mm".format(current["clearance"])
-            wire.PeakRatio = current["peak_ratio"]
+            wire.LoopPoints = current["loop_points"]
             wire.RiseAngle = "{} deg".format(current["rise_angle"])
             wire.FallAngle = "{} deg".format(current["fall_angle"])
             wire.MakeSolid = self.make_solid.isChecked()

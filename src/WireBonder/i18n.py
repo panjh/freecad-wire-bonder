@@ -70,7 +70,21 @@ _ZH = {
         "质心连线方向与法线平分线平行, 无法唯一确定平面; "
         "请选择法线朝向不同的两个面。",
     "The centroid distance must be greater than zero.": "连线长度必须大于零。",
+    "loop height direction": "弧线高度方向",
+    "loop horizontal direction": "弧线水平方向",
+    "The first pad lies inside the wire plane, so the loop has no "
+    "horizontal direction; please select a pad whose plane crosses "
+    "the wire plane.":
+        "起点焊盘落在走线平面内, 弧线没有水平方向; "
+        "请选择其平面与走线平面相交的焊盘。",
+    "The two centroids are perpendicular to the wire plane, so the "
+    "loop has no horizontal direction.":
+        "两质心连线垂直于走线平面, 弧线没有水平方向。",
+    "The horizontal distance between the two pads must be greater "
+    "than zero; the pads have to be offset along the level line.":
+        "两焊盘之间的水平距离必须大于零; 两焊盘需沿水平方向错开。",
     "Clearance must not be negative.": "净空高度不能为负值。",
+    "Loop point heights must not be negative.": "控制点高度不能为负值。",
     "Wire diameter must be greater than zero.": "金线直径必须大于零。",
     "Ball diameter must be greater than zero.": "焊球直径必须大于零。",
     "WireBond: the swept result is not a valid solid; please check whether the "
@@ -83,6 +97,11 @@ _ZH = {
     "Wire diameter (default 20 um)": "金线直径 (默认 20 µm)",
     "Clearance: loop height above the centroid line (default 500 um)":
         "净空高度: 弧顶相对两质心连线的高度 (默认 500 µm)",
+    "Loop control points as ratio,height pairs in mm, e.g. 0.4,0.2;0.6,0.18 - "
+    "one point is the apex":
+        "弧线控制点, 形如「比例,高度(mm)」的点对: 比例为沿水平跨度的位置 "
+        "(0 = 起点, 1 = 终点), 高度为相对起点水平面的绝对高度; "
+        "例如 0.4,0.2;0.6,0.18; 一个点即原来的弧顶。",
     "Loop peak position as a ratio of the centroid distance (0.05 - 0.95)":
         "拱顶位置占连线长度的比例 (0.05 - 0.95)",
     "Height ratio of the steep rise point near the start (0 - 1)":
@@ -124,6 +143,32 @@ _ZH = {
     "Wire Diameter": "金线直径",
     "Clearance": "净空高度",
     "Peak Position Ratio": "拱顶位置比例",
+    "Loop Points": "弧线控制点",
+    "Position Ratio": "位置比例",
+    "Height": "高度",
+    "Add Point": "添加控制点",
+    "Remove Point": "删除控制点",
+    "Loop control points: each row is a position ratio (0 = first pad, "
+    "1 = second pad) and a height above the centroid line.\n"
+    "One row is the apex - the old Clearance + PeakRatio. Add rows to "
+    "shape a flat top or a straight descent.\nAny length unit works "
+    "for the height.":
+        "弧线控制点: 每行是一个位置比例 (0 = 第一个焊盘, 1 = 第二个焊盘) "
+        "和相对连线的高度。\n一行即原来的弧顶 (等价于旧的净空高度 + 拱顶位置比例)。"
+        "增加行可以描述平顶或直线下降段。\n高度支持任意长度单位。",
+    "Loop control points: each row is a position ratio (0 = first pad, "
+    "1 = second pad) and a height above the horizontal plane of the "
+    "first pad.\nOne row is the apex - the old Clearance + PeakRatio. "
+    "Add rows to shape a flat top or a straight descent.\nAny length "
+    "unit works for the height.":
+        "弧线控制点: 每行是一个位置比例 (0 = 第一个焊盘, 1 = 第二个焊盘) "
+        "和相对第一个焊盘水平面的高度。\n一行即原来的弧顶 "
+        "(等价于旧的净空高度 + 拱顶位置比例)。增加行可以描述平顶或直线下降段。"
+        "\n高度支持任意长度单位。",
+    "Append another control point; the loop becomes a 4+N point spline.":
+        "追加一个控制点; 弧线将变为 4+N 个控制点的样条。",
+    "Remove the selected control point (at least one is kept).":
+        "删除选中的控制点 (至少保留一个)。",
     "Rise Height Ratio": "出线陡升比例",
     "Fall Height Ratio": "落线高度比例",
     "Bond Ball Diameter": "焊球直径",
@@ -177,14 +222,24 @@ _ZH = {
     "first pad, 90 deg = perpendicular (straight up).":
         "金线到达第二个焊盘的角度, 以两焊盘连线为基准。\n"
         "0° = 沿连线指向第一个焊盘, 90° = 垂直于连线 (正上方)。",
+    "Angle at which the wire leaves the first pad, measured from the "
+    "horizontal plane.\n0 deg = level, towards the second pad; "
+    "90 deg = straight up.":
+        "金线离开第一个焊盘的角度, 以水平面为基准。\n"
+        "0° = 水平指向第二个焊盘, 90° = 正上方。",
+    "Angle at which the wire reaches the second pad, measured from the "
+    "horizontal plane.\n0 deg = level, towards the first pad; "
+    "90 deg = straight up.":
+        "金线到达第二个焊盘的角度, 以水平面为基准。\n"
+        "0° = 水平指向第一个焊盘, 90° = 正上方。",
     "Angle at which the wire leaves the first pad, measured "
-    "from the line between the pads: 0 deg points at the "
-    "second pad, 90 deg is perpendicular (straight up)":
-        "金线离开第一个焊盘的角度, 以两焊盘连线为基准: 0° 指向第二个焊盘, 90° 垂直于连线 (正上方)",
+    "from the horizontal plane: 0 deg is level and points at "
+    "the second pad, 90 deg is straight up":
+        "金线离开第一个焊盘的角度, 以水平面为基准: 0° 水平指向第二个焊盘, 90° 正上方",
     "Angle at which the wire reaches the second pad, "
-    "measured from the line between the pads: 0 deg points "
-    "at the first pad, 90 deg is perpendicular":
-        "金线到达第二个焊盘的角度, 以两焊盘连线为基准: 0° 指向第一个焊盘, 90° 垂直于连线",
+    "measured from the horizontal plane: 0 deg is level and "
+    "points at the first pad, 90 deg is straight up":
+        "金线到达第二个焊盘的角度, 以水平面为基准: 0° 水平指向第一个焊盘, 90° 正上方",
     "Distance from each pad to its entry/exit control point, "
     "measured along the rise/fall ray (default 10 um)":
         "每个焊盘到其进出线控制点的距离, 沿出线/落线方向测量 (默认 10 µm)",
@@ -207,6 +262,16 @@ _ZH = {
     "steeper approach.":
         "每个焊盘到其进出线控制点的水平距离。\n与出线/落线高度比例一起决定金线离开 C1 与落入 C2 的角度:\n"
         "斜率 = 比例 × 净空高度 / 该距离, 距离越小进出线越陡。",
+    "Distance from each pad to its entry/exit control point, measured "
+    "along the rise/fall ray.\nIt sets how far the straight lead-in "
+    "and lead-out run before the loop points take over.":
+        "每个焊盘到其进出线控制点的距离, 沿出线/落线方向测量。\n"
+        "它决定直线进出线段的长度, 之后才由弧线控制点接管。",
+    "Note: a loop point is {:.0f} um high, more than the centroid "
+    "distance ({:.0f} um);\nthe loop will look exaggerated - "
+    "consider reducing the loop point heights.":
+        "注意: 某个控制点高度 ({:.0f} µm) 大于两质心间距 ({:.0f} µm),\n"
+        "生成的弧线会比较夸张, 建议减小控制点高度。",
     "Shape of the bump at the first bond point (C1)":
         "第一个焊点 (C1) 处的凸点形状",
     "Shape of the bump at the second bond point (C2)":
@@ -267,10 +332,10 @@ _ZH = {
     "Create Wire Bond": "创建打线(金线)",
     "Create Bisector Plane": "创建平分辅助面",
     "Build the bisector plane of two faces and create a wire loop (gold wire) "
-    "between the two face centroids.\nThe wire diameter and clearance can be "
-    "set in the panel.":
+    "between the two face centroids.\nThe wire diameter and loop control points "
+    "can be set in the panel.":
         "由两个面构造平分平面, 并沿其对两质心连线生成打线弧 (金线)。\n"
-        "金线直径与净空高度可在面板中设置。",
+        "金线直径与弧线控制点可在面板中设置。",
     "Only build the bisector plane of two faces, without creating a wire.":
         "只由两个面构造平分平面, 不生成金线。",
     "Please select two faces in the 3D view first (hold Ctrl for multi-select).\n"

@@ -30,10 +30,10 @@ PARAM_PATH = "User parameter:BaseApp/Preferences/Mod/WireBonder"
 #: to/from micrometres where needed
 _SPEC = {
     "wire_diameter": ("WireDiameter", core.DEFAULT_WIRE_DIAMETER),
-    "clearance": ("Clearance", core.DEFAULT_CLEARANCE),
+    "loop_points": ("LoopPoints",
+                    core.format_loop_points(core.DEFAULT_LOOP_POINTS)),
     "ball_diameter": ("BallDiameter", core.DEFAULT_BALL_DIAMETER),
     "plane_rotation": ("PlaneRotation", core.DEFAULT_PLANE_ROTATION),
-    "peak_ratio": ("PeakRatio", core.DEFAULT_PEAK_RATIO),
     "rise_angle": ("RiseAngle", core.DEFAULT_RISE_ANGLE),
     "fall_angle": ("FallAngle", core.DEFAULT_FALL_ANGLE),
     "make_solid": ("MakeSolid", False),
@@ -62,8 +62,8 @@ _BOOLEAN_KEYS = (
     "ui_show_options",
 )
 
-#: keys stored as strings (enumerations, free text)
-_STRING_KEYS = ("start_ball_mode", "end_ball_mode")
+#: keys stored as strings (enumerations, free text, the loop point list)
+_STRING_KEYS = ("start_ball_mode", "end_ball_mode", "loop_points")
 
 #: enumeration keys that must hold one of :data:`core.BUMP_MODES`
 _MODE_KEYS = ("start_ball_mode", "end_ball_mode")
@@ -126,13 +126,11 @@ class Settings(dict):
         settings = cls.load()
         limits = {
             "wire_diameter": (0.0001, 0.5),        # 0.1 um ... 500 um
-            "clearance": (0.0, 100.0),             # 0 ... 100000 um
             "ball_diameter": (0.001, 20.0),        # 1 um ... 20000 um
             "lead_distance": (0.0, 5.0),           # 0 ... 5000 um
             "plane_rotation": (-180.0, 180.0),
-            "peak_ratio": (0.05, 0.95),
-            "rise_angle": (0.0, 89.0),
-            "fall_angle": (0.0, 89.0),
+            "rise_angle": (0.0, 180.0),
+            "fall_angle": (0.0, 180.0),
         }
         for key, (low, high) in limits.items():
             try:
@@ -140,6 +138,15 @@ class Settings(dict):
             except Exception:
                 continue
             settings[key] = min(max(value, low), high)
+
+        # the loop point list is stored as text; canonicalise it so the panel
+        # always receives a well formed "ratio,height;..." string
+        try:
+            settings["loop_points"] = core.format_loop_points(
+                core.normalise_loop_points(settings.get("loop_points")))
+        except Exception:
+            settings["loop_points"] = core.format_loop_points(
+                core.DEFAULT_LOOP_POINTS)
         return settings
 
     # ------------------------------------------------------------------
@@ -164,6 +171,8 @@ class Settings(dict):
             try:
                 if key in _BOOLEAN_KEYS:
                     params.SetBool(name, bool(self[key]))
+                elif key in _STRING_KEYS:
+                    params.SetString(name, str(self[key]))
                 else:
                     params.SetFloat(name, float(self[key]))
             except Exception:
@@ -205,6 +214,11 @@ def _store(values):
         try:
             if key in _BOOLEAN_KEYS:
                 params.SetBool(name, bool(value))
+            elif key == "loop_points":
+                # accept either the text form or a (ratio, height) sequence
+                if not isinstance(value, str):
+                    value = core.format_loop_points(value)
+                params.SetString(name, value)
             elif key in _STRING_KEYS:
                 params.SetString(name, str(value))
             else:

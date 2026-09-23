@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.12.0 |
+| 文档版本 | v0.13.0 |
 | 日期 | 2026-09-23 |
 | 状态 | 已实现并通过实机验证 |
 | 源码目录 | [`src/`](../src/README.md) |
@@ -72,7 +72,8 @@
 | --- | --- |
 | Wire Bonding（打线） | 用细金属丝连接芯片焊盘与外部的工艺 |
 | Wire Loop（线弧） | 金线在两点之间形成的弧形结构 |
-| Clearance（净空高度） | 本插件中定义为**弧顶相对两质心连线的高度** |
+| Loop Points（弧线控制点） | 描述弧线中段的 `(位置比例, 高度)` 列表；1 个点即传统弧顶，多个点构成 `4+N` 点样条。取代了旧的 Clearance + PeakRatio |
+| Clearance（净空高度） | 旧参数，现已并入弧线控制点的高度分量（相对两质心连线） |
 | Bond Ball（焊球） | 第一焊点在焊盘上压出的球状焊点，本插件用球体表示 |
 | 平分平面 | 由"两质心连线方向"与"两条质心法线的角平分方向"张成的平面 |
 | 辅助面 | 仅用于构造参考的平分平面，生成后自动隐藏 |
@@ -87,8 +88,8 @@
 | FR-2 | 由两个面自动计算平分平面（质心连线 + 法线角平分） | 高 | 已实现 |
 | FR-3 | 在平分平面内生成连接两个质心的打线弧 | 高 | 已实现 |
 | FR-4 | 金线直径可设置（默认 20 µm），可放样成实体 | 高 | 已实现 |
-| FR-5 | 净空高度可设置（默认 500 µm，面板以 µm 输入） | 高 | 已实现 |
-| FR-6 | 弧顶位置、出线陡升、落线姿态比例可设置 | 中 | 已实现 |
+| FR-5 | 弧线控制点（位置比例 + 高度）可用列表设置；1 个点即旧弧顶，多个点扩展为 `4+N` 点样条 | 高 | 已实现（v0.13.0） |
+| FR-6 | 出线/落线角度与进出线距离可设置 | 中 | 已实现 |
 | FR-7 | 可选生成两个焊球，球直径可设置（默认 50 µm，约为线径 2.5 倍） | 中 | 已实现 |
 | FR-8 | 生成对象为**参数化对象**，改属性自动重建几何 | 高 | 已实现 |
 | FR-9 | 平分面作为辅助面，生成后自动隐藏；**默认不创建** | 中 | 已实现 |
@@ -110,6 +111,7 @@
 | FR-25 | **进出线距离可设置**（默认 10 µm）：用绝对距离定位控制点 2 与 6，使进出线角度只由高度比例与该距离决定，与连线长度解耦 | 中 | 已实现（v0.9.0） |
 | FR-26 | **线形贴近真实打线轮廓**（平顶 + 长直下降） | 高 | v0.10.0 实现，v0.11.0 由 FR-27 取代 |
 | FR-27 | **5 个控制点 + 角度参数**：A 起点 / B 上起点 / C 顶点 / D 上终点 / E 终点；进出线由 `RiseAngle`、`FallAngle`（以 A–E 连线为基准）与 `LeadDistance` 决定，取消高度比例与平顶长度参数 | 高 | 已实现（v0.11.0） |
+| FR-28 | **打线机视角坐标系**：弧线以「起点焊盘平面 ∩ 走线平面」为水平基准、以其面内垂线为高度基准；`RiseAngle` / `FallAngle` 与 `LoopPoints` 的高度都以该水平面为准 | 高 | 已实现（v0.14.0） |
 
 ### 4.1 FR-2 的几何定义（精确表述）
 
@@ -139,21 +141,32 @@ z' = Rot(x, θ) · z
 
 ### 4.2 FR-3 的打线弧轮廓
 
-弧线在局部坐标下的 **5 个**控制点 A–E（`L` 为连线长度，`H` 为净空高度，
-`p` 为顶点位置比例，`θR`/`θF` 为出线/落线角度，`lead` 为进出线距离）：
+弧线在局部坐标下的 **`4 + N` 个**控制点（`L` 为连线长度，`θR`/`θF` 为出线/落线角度，
+`lead` 为进出线距离；中间 `N` 个点来自参数 `LoopPoints` 的 `(ratioᵢ, heightᵢ)` 列表）：
 
 | 点 | 名称 | u 坐标 | v（高度） |
 | --- | --- | --- | --- |
 | **A** | 起点（第一焊盘） | `0` | `0` |
 | **B** | 上起点 | `lead · cos θR` | `lead · sin θR` |
-| **C** | 顶点 | `p · L` | `H` |
+| **第 i 个控制点** | `LoopPoints[i]` | `ratioᵢ · L` | `heightᵢ` |
 | **D** | 上终点 | `L − lead · cos θF` | `lead · sin θF` |
 | **E** | 终点（第二焊盘） | `L` | `0` |
 
-`θR` 与 `θF` 均以 **A–E 连线**为基准（0° 指向另一焊盘，90° 垂直于连线）。
-详细定义见 [`spline-ctrl-points.md`](spline-ctrl-points.md)。
+`θR` 与 `θF` 均以**水平面**为基准（0° 水平指向另一焊盘，90° 正上方）。
+控制点坐标不再沿 `C1→C2` 布置，而是由 `core.horizontal_frame()` 给出的
+"打线机视角"坐标系确定：水平轴 = 起点焊盘平面 ∩ 走线平面，高度轴 = 该水平线在
+走线平面内的垂线（正方向朝起点焊盘法线一侧），弧线控制点的高度为相对 A 点水平面的
+**绝对高度**。详细定义见 [`spline-ctrl-points.md`](spline-ctrl-points.md)。
+
+`N = 1` 时共 **5 个**控制点，与旧版一致（单点即旧的弧顶：`ratio`=`PeakRatio`、
+`height`=`Clearance`）；增加 `LoopPoints` 的行数即可扩展为 8 点、10 点……
+用于描述平顶或直线下降。
 
 控制点经 `Part.BSplineCurve.interpolate()` 插值成**穿过所有控制点**的平滑样条；随后映射回三维：`P(u, v) = A + u·x + v·y`。
+
+位置约束（`core.loop_profile()`）：按 `ratio` 排序、夹到 `(0, L)`、相邻至少间隔
+`0.002·L`（放不下时自动缩小），并把 `B` / `D` 夹到首 / 末控制点之外 2% 余量，
+**始终保证 `u` 严格递增**。列表可留空（退化为 4 点弧线）。
 
 > **为什么是 5 个点**：控制点越少参数越直观、样条过冲越小（顶点高度误差仅
 > **+0.0%~+0.8%**）。代价是**没有真正的平顶**（顶点附近为圆弧过渡，顶部 2% 以内约
@@ -161,7 +174,7 @@ z' = Rot(x, θ) · z
 > 历史：v0.10.0 曾用 8 点实现"平顶 + 直线下降"，但参数间耦合较强；
 > v0.11.0 按 [`spline-ctrl-points.md`](spline-ctrl-points.md) 的规范改为 5 点 + 角度参数。
 >
-> **角度上限 89°**：恰好 90° 时 `cos = 0`，B/D 的 `u` 将与 A/E 重合，
+> **角度上限 180°**：恰好 90° 时 `cos = 0`，B/D 的 `u` 将与 A/E 重合，
 > 破坏样条要求的"参数严格递增"。
 
 **不变量**：
@@ -295,10 +308,9 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 | `Face1` | `App::PropertyLinkSub` | — | — | 第一个面 |
 | `Face2` | `App::PropertyLinkSub` | — | — | 第二个面 |
 | `WireDiameter` | `App::PropertyLength` | 0.02 | mm | 金线直径（20 µm） |
-| `Clearance` | `App::PropertyLength` | 0.5 | mm | 净空高度（弧顶相对连线），即 **500 µm** |
-| `PeakRatio` | `App::PropertyFloat` | 0.42 | — | 顶点位置占连线长度比例（0.05–0.95） |
-| `RiseAngle` | `App::PropertyAngle` | 75 | deg | 出线角度，以 A–E 连线为基准（0–89°） |
-| `FallAngle` | `App::PropertyAngle` | 20 | deg | 落线角度，以 A–E 连线为基准（0–89°） |
+| `LoopPoints` | `App::PropertyString` | `0.4,0.2` | — | 弧线控制点列表 `ratio,height;...`：`ratio` 为沿**水平跨度**的比例，`height` 为**相对 A 点水平面**的绝对高度（mm）。1 个点即旧弧顶（`PeakRatio`+`Clearance`），多个点构成 `4+N` 点样条 |
+| `RiseAngle` | `App::PropertyAngle` | 75 | deg | 出线角度，以**水平面**为基准（0–89°） |
+| `FallAngle` | `App::PropertyAngle` | 15 | deg | 落线角度，以**水平面**为基准（0–89°） |
 | `MakeSolid` | `App::PropertyBool` | False | — | 是否生成金线实体 |
 | `ShowCentreline` | `App::PropertyBool` | True | — | 是否同时显示中心线 |
 | `StartBallMode` | `App::PropertyEnumeration` | `sphere` | — | C1 处的凸起形状 |
@@ -354,15 +366,13 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 | --- | --- | --- | --- |
 | 选中的平面 | 只读文本 | — | 显示 `对象: FaceN`、质心与法线，便于确认选择正确 |
 | 金线直径 | 数值输入（µm） | 20 | 0.1–500 µm |
-| 净空高度 | 数值输入（µm） | 500 | 0–100000 µm（内部按 mm 存储） |
+| 弧线控制点 | 表格编辑器（位置比例 / 高度） | 一行 `0.40 / 200 µm` | 至少 1 行；每行 = 一个控制点，可增删；取代旧的净空高度 + 拱顶位置比例 |
 | 走线平面偏转角 | 数值输入（°） | 0 | −180°–180°，步进 5°；0° 与原平分平面重合 |
-| 拱顶位置比例 | 数值输入 | 0.42 | 0.05–0.95 |
-| 出线陡升比例 | 数值输入 | 0.60 | 0–1 |
-| 落线高度比例 | 数值输入 | 0.20 | 0–0.6 |
+| 出线角度 | 数值输入（°） | 75 | 0–89°，以水平面为基准 |
+| 落线角度 | 数值输入（°） | 15 | 0–89°，以水平面为基准 |
 | 焊球直径 | 数值输入（µm） | 50 | 1–20000 µm |
 | 生成金线实体 | 复选 | 否 | 勾选后生成真实直径实体（较慢） |
 | 同时显示中心线 | 复选 | 是 | 细直径下便于看清走线 |
-| 生成焊球 | 复选 | 是 | 与“焊球直径”联动 |
 | 创建平分辅助面 | 复选 | 否 | 生成后自动隐藏；默认不创建以减少对象数量 |
 
 ### 8.3 错误与提示
@@ -477,7 +487,7 @@ face_global = face.transformed(extra.toMatrix())
 | T-1 | 平分平面构造 | 两个水平焊盘顶面 | 平面法向 `(0, -1, 0)`，即竖直平分面，与手工模型一致 |
 | T-2 | 曲线端点 | 比较曲线首尾点与质心 | 误差 `< 1e-7 mm` |
 | T-3 | 曲线共面性 | 检查曲线包围盒 `y` | `y` 恒为 0，严格在平分平面内 |
-| T-4 | 参数化联动 | `Clearance` 2 mm → 5 mm | 包围盒 `ZMax` 由 20.051 → 21.175 mm 自动更新 |
+| T-4 | 参数化联动 | 控制点高度 2 mm → 5 mm（`LoopPoints`） | 包围盒 `ZMax` 由 20.051 → 21.175 mm 自动更新 |
 | T-5 | 金线实体体积 | 直径 2 mm 标定件 | 324.3232 vs 理论 324.32 mm³ |
 | T-6 | 焊球体积 | 直径 100 µm | `0.0005235988 mm³`，与 `4/3πr³` 一致 |
 | T-7 | 焊球位置 | 球心坐标 | 精确落在两个面质心 |
@@ -488,7 +498,11 @@ face_global = face.transformed(extra.toMatrix())
 | T-12 | 面板按钮 | 构造面板并取按钮 | 返回 int `4195328`，无异常 |
 | T-13 | 面板默认值 | 读取控件值 | 净空 500 µm、焊球 50 µm、辅助面不勾选、可正确取到面板按钮 |
 | T-14 | 装配体坐标系 | `09_L2049D007.Face1` + `PD_Sub mount.Face103` | 质心由局部 (1.304, 0.076, 0.131) 修正为全局 (8.639, -0.726, 0.362)，生成曲线起点与全局质心一致（< 1e-6 mm） |
-| T-15 | 间距提醒 | L=0.393 mm、净空 500 µm | 面板显示“净空高度大于两质心间距”的橙色提示 |
+| T-15 | 高度提醒 | L=0.393 mm、控制点高 200 µm 以上 | 面板显示“控制点高度大于两质心间距”的橙色提示 |
+| T-16 | 单点等价 | `LoopPoints="0.4,0.2"` vs 旧 `(PeakRatio=0.4, Clearance=0.2)` | 5 个控制点 `(u,v)` **逐位一致**（差 < 1e-12） |
+| T-17 | 4+N 扩展 | `LoopPoints="0.30,0.2;0.45,0.28;0.55,0.28;0.70,0.2"` | 生成 **8** 个控制点，`u` 严格递增，实体 `isValid()=True` |
+| T-18 | 位置保护 | `0.5,0.2;0.5,0.3;-1,0.1;2,0.1`（并列 + 越界） | 排序 + 夹紧 + 最小间距后 `u` 仍**严格递增**（实测 `0.0001,0.0001,0.5,0.502,0.9999,0.9999`） |
+| T-19 | 旧文档迁移 | 旧对象含 `Clearance=0.35`、`PeakRatio=0.42` | 自动变为 `LoopPoints="0.42,0.35"`，两个旧属性被移除，**形状不变** |
 
 ### 10.2 建议的补充测试（待办）
 
@@ -545,7 +559,7 @@ face_global = face.transformed(extra.toMatrix())
 | --- | --- |
 | 存储位置 | `User parameter:BaseApp/Preferences/Mod/WireBonder`（FreeCAD 用户参数，**不写入 .FCStd**） |
 | 触发时机 | 面板点 **OK** 成功后写入；面板构造时读取并回填 |
-| 持久化字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `PlaneRotation` / `PeakRatio` / `RiseAngle` / `FallAngle` / `LeadDistance` / `MakeSolid` / `ShowCentreline` / `StartBallMode` / `EndBallMode` / `CreatePlane`（长度以 mm 存储，面板负责 µm 换算） |
+| 持久化字段 | `WireDiameter` / `LoopPoints`（文本，`SetString`） / `BallDiameter` / `PlaneRotation` / `RiseAngle` / `FallAngle` / `LeadDistance` / `MakeSolid` / `ShowCentreline` / `StartBallMode` / `EndBallMode` / `CreatePlane`（长度以 mm 存储，面板负责 µm 换算） |
 | 读取兜底 | 逐项独立读取，缺失或类型异常时回退到 `core` 中的内置默认值；`Settings.load_checked()` 还会把值夹到面板控件的合法区间，防止手工改坏参数后界面出现异常值 |
 | 重置方式 | 面板底部 **恢复默认值** 按钮（同时清空存储），或 `Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder` |
 | 注意事项 | `ParamGet` 按类型分别存储，删除必须用对应方法（数值 `RemFloat`、布尔 `RemBool`）；用 `RemString` 删数值会静默失败 |
@@ -594,12 +608,15 @@ face_global = face.transformed(extra.toMatrix())
 
 | 脚本 | 输出 | 说明 |
 | --- | --- | --- |
-| [`scripts/plot_peak_ratio.py`](../scripts/plot_peak_ratio.py) | `docs/images/peak-ratio.png` | 四个 `PeakRatio` 取值下的弧线形态对比：复用与 `core.loop_profile()` 完全相同的控制点公式，再用弦长参数化的三次样条平滑，模拟 `Part.BSplineCurve.interpolate()` 的行为 |
+| [`scripts/plot_peak_ratio.py`](../scripts/plot_peak_ratio.py) | `docs/images/peak-ratio.png` | **遗留脚本**：`PeakRatio` 参数已由 `LoopPoints` 取代（v0.13.0），此脚本仍可独立运行，用自带的 7 点公式展示峰值位置对弧线形态的影响，仅作历史参考 |
+| [`scripts/compare_profile.py`](../scripts/compare_profile.py) | `docs/images/loop-shape.png` | 按参考图比例绘制 `4+N` 控制点弧线（含平顶示例）并打印各控制点与派生角度 |
+| [`scripts/wirebond_sketch.py`](../scripts/wirebond_sketch.py) | `data/wirebond_sketch.png` | **独立脚本**（不读取任何配置文件，也不需要 FreeCAD）：参数直接写在文件顶部的 CONFIG 块（`SPAN` / `HEIGHT` / `LOOP_POINTS` / `LEAD_DISTANCE` / `RISE_ANGLE` / `FALL_ANGLE`，长度单位 µm），绘制走线平面内的 `4+N` 控制点剖面图并打印各控制点、峰值与派生角度。几何全部在**绝对 X/Y 坐标**中直接给出（无局部坐标系、无旋转）：`A = (0, 0)`、`E = (SPAN, HEIGHT)`——`SPAN` 为 A→E 的**水平（X）距离**，`HEIGHT` 为 E 相对 A 的高度差（可负）；`LOOP_POINTS` 为 `(ratio, y)` 列表（`ratio` 沿 A–E 跨度取 0…1，`x = ratio × SPAN`；`y` 为绝对高度）；`RISE_ANGLE` / `FALL_ANGLE` 及 B / D 的位置均以**水平面**为基准（0° 水平、90° 竖直） |
 
 实现要点：
 
 - 仅依赖 **matplotlib + numpy**（自然三次样条用 Thomas 算法自行实现，避免引入 SciPy）；
 - 字体自动挑选可用中文字体（Microsoft YaHei / SimHei / Noto Sans CJK …），缺失时回退；
+- **中英双语**（`--lang zh|en|both`）：`both` 打印两份报告并输出 `_zh`/`_en` 两张图；英文图固定用 matplotlib 自带的 DejaVu Sans（不依赖 CJK 字体），中文图找不到中文字体时打印告警并回退。控制台报告用 ASCII 单位（`um`/`deg`）并把 stdout 重配置为 UTF-8，避免 GBK 控制台乱码；`-o/--output` 相对仓库根目录解析；
 - **必须使用参数化样条**：若把 `v` 当作 `u` 的函数插值，样条会在控制点之间明显过冲（实测最高 5%），
   会错误地暗示线弧高于净空高度；参数化后过冲降至 3.5% 以内，与 FreeCAD 中的实际几何一致；
 - 脚本同时把表格所需数值打印到标准输出，便于核对文档中的数据。
@@ -641,3 +658,5 @@ face_global = face.transformed(extra.toMatrix())
 | v0.10.1 | 2026-09-22 | **修复两个缺陷并改善报错可诊断性**。① 平顶平台未受峰值位置约束：`u3 = peak_u − top/2` 在 `peak_ratio` 较小（如 0.05）或较大（0.90）时会落到 C1 之前/落线点之后，使 8 个控制点的 u 不再递增（实测 1680 组参数中有 421 组非法，最坏情况出现 `u3 = 0` 甚至负值）。改为**双侧夹紧**：`half_top = min(top/2, 0.45L/2, min(peak_u − lead, (L − lead) − peak_u) × 0.98)`，取两侧可用空间较小者并留 2% 余量；复测 **1680 组全部合法**。② `_restore_defaults()` 中 `LeadDistance` 被重复设置了一行（插入新字段时的冗余），已清理。③ `accept()` 的异常分支现在把完整调用栈写入 Report view（此前只弹一句异常文字，难以定位）；报错文案相应更新 |
 | v0.11.0 | 2026-09-22 | **按规范改为 5 个控制点 + 角度参数**（规范见 [`spline-ctrl-points.md`](spline-ctrl-points.md)）。控制点 A 起点 / B 上起点 / C 顶点 / D 上终点 / E 终点：`B = A + lead·(cos θR, sin θR)`、`D = E − lead·(cos θF, −sin θF)`，`C = (p·L, H)`。`RiseRatio`/`FallRatio`（高度比例）改为 **`RiseAngle`/`FallAngle`（`App::PropertyAngle`，以 A–E 连线为基准，0° 指向另一焊盘、90° 垂直于连线）**，默认 **75°/20°**；`LeadDistance` 默认由 10 µm 改为 **30 µm**；删除 `TopLength`。实测顶点高度误差仅 **+0.0%~+0.8%**，`AB = ED = LeadDistance` 精确成立；代价是平台宽度降至 110–160 µm、下降段外凸约 14%（5 点的固有限制）。角度上限 89° 以保证控制点 u 严格递增；`lead·cos θ` 过大时自动夹紧。新增 `scripts/scan_angles.py` 用于角度/距离扫描 |
 | v0.12.0 | 2026-09-22 | **彻底移除旧的两端焊球参数**。面板去掉「生成焊球」复选框，对象不再创建 `MakeBalls` 与 `BallMode` 两个属性（各端的 `StartBallMode`/`EndBallMode` 已完全覆盖其功能）。`compute_from_faces()` 去掉 `make_balls` 与 `ball_mode` 兼容参数，改由两端参数直接决定。**顺带修复一个真实缺陷**：OCC 的 `BRepPrimAPI_MakeCone` 不接受上下底半径相等（抛 `creation of cone failed`），而两个直径默认都取自 `BallDiameter`，因此「选圆台但不改直径」必然创建失败；现改为等半径时调用 `makeCylinder`。修复后 9 种两端形状组合全部通过。旧文档中这两个属性读取时会消失，不影响几何 |
+| v0.13.0 | 2026-09-23 | **弧线控制点列表取代 `Clearance` + `PeakRatio`，控制点数由固定 5 个变为 `4 + N`**。① `core.py` 删除 `DEFAULT_CLEARANCE` / `DEFAULT_PEAK_RATIO`，新增 `DEFAULT_LOOP_POINTS = ((0.40, 0.2),)`；`loop_profile(length, loop_points, rise, fall, lead)` 取 `(ratio, height)` 列表生成 `A, B, 控制点…, D, E`。**列表只有 1 项时与旧 `(PeakRatio=0.4, Clearance=0.2)` 逐位等价**（实测差 < 1e-12），因此旧行为完全保留；增加项数即可描述平顶 / 直线下降。② 新增 `format_loop_points()` / `parse_loop_points()` / `normalise_loop_points()` 负责列表的序列化（文本 `"ratio,height;..."`，分隔符不随区域设置变化）、解析与校验；`_spread_positions()` 保证 `u` **严格递增**——按 `ratio` 稳定排序、夹到 `(0, L)`、相邻至少 `0.002·L`（放不下时**自动缩小间距而非报错**），并把 `B`/`D` 夹到首/末控制点之外 2% 余量。③ `features.py` 用 `App::PropertyString` 的 **`LoopPoints`** 取代 `Clearance`(Length) 与 `PeakRatio`(Float)；`__init__` 里 `_migrate_legacy_loop()` 会把旧属性合并成一个控制点并移除它们，**旧图纸形状不变**。④ `settings.py` 的 `_SPEC`/`_STRING_KEYS` 改为字符串键 `LoopPoints`，`load_checked()` 用 `normalise_loop_points()` 规范化。⑤ 面板新增 **`LoopPointsEditor`**（`QTableWidget` + 「添加控制点」/「删除控制点」按钮，比例列无量纲、高度列 `Gui::QuantitySpinBox` 支持任意长度单位与表达式），移除「净空高度」「拱顶位置比例」两个字段；高度超限提醒改为基于**最高控制点**。⑥ 三个离线脚本同步：`compare_profile.py`（支持多点、打印 `A B C… D E` 标签）、`scan_angles.py`（单点扫描）、`wirebond_sketch.py`（支持 N 点，且**兼容旧 JSON** 的 `Clearance`/`PeakRatio` 回退）。实测：单点等价、`N=4` 得 8 点、并列/越界/空列表均保持严格递增、`panel.accept()` 端到端创建成功且 `isValid()=True` |
+| v0.14.0 | 2026-09-23 | **弧线改用"打线机视角"坐标系（水平面基准），不再沿 A–E 连线布置**。算法来源为定型后的 `scripts/wirebond_sketch.py`。① 新增 `core.horizontal_frame(frame, normal1)` → `LoopFrame(origin, xdir, ydir, zdir, span_x, span_y)`：**水平轴 `x`** = 起点焊盘平面与走线平面的**交线**（即 `x = normalize(y × z)`，`y = normalize(n₁ − (n₁·z)z)`），**高度轴 `y`** 的正方向取与起点焊盘法线 `n₁` 接近的一侧，因此 `+y` 永远背离焊盘。取叉乘次序 `y × z` 可证明 `span_x = L·(xdir·x) = L·(y·ydir) ≥ 0`（因 `ydir` 是两法线平分方向），故 `span_x` 恒为非负、无需翻转——若反向翻转会把高度差一起反号。② `loop_profile()` 签名改为 `loop_profile(span_x, span_y=0, loop_points, rise, fall, lead)`，返回**平面内绝对坐标** `(x, y)`：`A=(0,0)`、`B=(lead·cos rise, lead·sin rise)`、控制点 `(ratio·span_x, height)`、`D=(span_x − lead·cos fall, span_y + lead·sin fall)`、`E=(span_x, span_y)`。`span_y` 即两焊盘高度差（第二个更低时为负）。③ `compute_from_faces()` 用 `horizontal_frame()` 建立走线坐标系后调 `to_world(loop_frame, points2d)`；**平分平面（`frame`/辅助面）保持不变**，只换弧线的布局坐标系。④ 角度语义随之变为**以水平面为基准**（0° 水平、90° 正上方），与打线机编程一致，且**不随焊盘高度差变化**；退化保护：`n₁ // z`（起点焊盘平面与走线平面平行，交线不存在）或 `span_x ≤ 0` 时抛 `WireBondError` 并提示换面。⑤ 面板/属性文案、i18n 词条、文档（`spline-ctrl-points.md` / `parameters.md` / PRD / README）与三个离线脚本（`compare_profile.py` 的公式副本与调用改为 `span_x/span_y` 关键字、`scan_angles.py`、`wirebond_sketch.py`）全部同步；版本号 → **0.14.0**。**实测**：默认双水平焊盘（`C1=(0,0,0)`、`C2=(0.4,0,0)`、法线 +Z）得到 `x=+X`、`y=+Z`、`span=(0.4, 0)`，5 个控制点与 v0.13.0 **逐位相同（差 < 1e-12）**；第二个焊盘降低 150 µm 时 `span_y=−0.15`、`E=(0.4,−0.15)`，弧顶仍高于 A 面 0.2 mm；起点焊盘绕 Y 倾斜 30° 时 `x·n₁ = 0.00e+00`、`y·n₁ = 1.0000`、弧顶高于 A 面 0.2000 mm，曲线端点与两质心误差 `< 1e-9`，实体 `isValid()=True`；`LoopPoints` 设置往返与旧 `Clearance`/`PeakRatio` 迁移均通过 |

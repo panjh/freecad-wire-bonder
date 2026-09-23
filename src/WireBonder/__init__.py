@@ -8,10 +8,10 @@ Select any two faces and the addon will
   * generate a wire loop between the two centroids inside that plane and sweep
     it with the configured gold wire diameter to obtain a solid.
 
-The wire diameter and the clearance stay fully parametric.
+The wire diameter and the loop control points stay fully parametric.
 """
 
-__version__ = "0.12.0"
+__version__ = "0.14.0"
 __all__ = [
     "core",
     "features",

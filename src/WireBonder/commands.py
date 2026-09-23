@@ -62,7 +62,8 @@ class CreateWireBondCommand:
             "ToolTip": _(
                 "Build the bisector plane of two faces and create a wire loop "
                 "(gold wire) between the two face centroids.\n"
-                "The wire diameter and clearance can be set in the panel."
+                "The wire diameter and the loop control points can be set in "
+                "the panel."
             ),
         }
 

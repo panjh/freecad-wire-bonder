@@ -3,7 +3,7 @@
 
 Both are ``Part::FeaturePython`` objects that reference the two faces selected
 by the user through ``App::PropertyLinkSub``. After any parameter change (wire
-diameter, clearance, loop peak position, ...) FreeCAD re-runs ``execute()``
+diameter, the loop control points, ...) FreeCAD re-runs ``execute()``
 automatically and rebuilds the geometry.
 """
 
@@ -47,23 +47,28 @@ class WireBondFeature:
         _add_property(obj, "App::PropertyLength", "WireDiameter", "WireBond",
                       _("Wire diameter (default 20 um)"),
                       core.DEFAULT_WIRE_DIAMETER)
-        _add_property(obj, "App::PropertyLength", "Clearance", "WireBond",
-                      _("Clearance: loop height above the centroid line "
-                        "(default 500 um)"),
-                      core.DEFAULT_CLEARANCE)
-        _add_property(obj, "App::PropertyFloat", "PeakRatio", "WireBond",
-                      _("Loop peak position as a ratio of the centroid "
-                        "distance (0.05 - 0.95)"),
-                      core.DEFAULT_PEAK_RATIO)
+        # The loop shape is a list of (position ratio, height) control points,
+        # stored as a compact string like "0.4,0.2;0.6,0.18". One point is the
+        # classic apex (it replaced the old Clearance + PeakRatio pair); extra
+        # points turn the loop into a 4+N point spline. ``Label`` is the visible
+        # face of the property; a StringList would not be editable as a table.
+        _add_property(obj, "App::PropertyString", "LoopPoints", "WireBond",
+                      _("Loop control points as ratio,height pairs in mm, "
+                        "e.g. 0.4,0.2;0.6,0.18 - one point is the apex"),
+                      core.format_loop_points(core.DEFAULT_LOOP_POINTS))
+        # migrate a document saved before LoopPoints existed: fold the old
+        # Clearance + PeakRatio into a single loop point, then drop the old
+        # properties so the property editor no longer shows them.
+        self._migrate_legacy_loop(obj)
         _add_property(obj, "App::PropertyAngle", "RiseAngle", "WireBond",
                       _("Angle at which the wire leaves the first pad, measured "
-                        "from the line between the pads: 0 deg points at the "
-                        "second pad, 90 deg is perpendicular (straight up)"),
+                        "from the horizontal plane: 0 deg is level and points at "
+                        "the second pad, 90 deg is straight up"),
                       core.DEFAULT_RISE_ANGLE)
         _add_property(obj, "App::PropertyAngle", "FallAngle", "WireBond",
                       _("Angle at which the wire reaches the second pad, "
-                        "measured from the line between the pads: 0 deg points "
-                        "at the first pad, 90 deg is perpendicular"),
+                        "measured from the horizontal plane: 0 deg is level and "
+                        "points at the first pad, 90 deg is straight up"),
                       core.DEFAULT_FALL_ANGLE)
         _add_property(obj, "App::PropertyBool", "MakeSolid", "WireBond",
                       _("Create the gold wire solid (slower for very small "
@@ -110,6 +115,31 @@ class WireBondFeature:
                         "(0 deg = coincident with the bisector plane)"),
                       core.DEFAULT_PLANE_ROTATION)
 
+    @staticmethod
+    def _migrate_legacy_loop(obj):
+        """Fold the legacy Clearance / PeakRatio into ``LoopPoints``.
+
+        Documents created before the loop-point list keep their ``Clearance`` and
+        ``PeakRatio`` properties. The first time such an object is touched the two
+        values become one loop point (a single point is exactly the old apex) and
+        the old properties are removed, so old drawings keep their exact shape.
+        """
+        for name in ("Clearance", "PeakRatio"):
+            if name not in obj.PropertiesList:
+                continue
+            try:
+                height = float(obj.Clearance)
+                ratio = float(obj.PeakRatio)
+            except Exception:
+                return
+            obj.LoopPoints = core.format_loop_points([(ratio, height)])
+            for legacy in ("Clearance", "PeakRatio"):
+                try:
+                    obj.removeProperty(legacy)
+                except Exception:
+                    pass
+            return
+
     # -- geometry rebuild -------------------------------------------
     def execute(self, obj):
         try:
@@ -126,8 +156,8 @@ class WireBondFeature:
             face1,
             face2,
             wire_diameter=float(obj.WireDiameter),
-            clearance=float(obj.Clearance),
-            peak_ratio=float(obj.PeakRatio),
+            loop_points=getattr(obj, "LoopPoints",
+                                core.format_loop_points(core.DEFAULT_LOOP_POINTS)),
             rise_angle=obj.RiseAngle.getValueAs("deg"),
             fall_angle=obj.FallAngle.getValueAs("deg"),
             make_solid=bool(obj.MakeSolid),
