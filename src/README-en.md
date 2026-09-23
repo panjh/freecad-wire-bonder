@@ -22,7 +22,7 @@ Given the two selected faces $F_1$ and $F_2$:
 1. take the **centroids** $\mathbf{C}_1$, $\mathbf{C}_2$ and the connecting direction
 
 $$
-\mathbf{d} = \mathrm{normalize}\!\left(\mathbf{C}_2 - \mathbf{C}_1\right),
+\mathbf{d} = \mathrm{normalize}\left(\mathbf{C}_2 - \mathbf{C}_1\right),
 \qquad
 L = \left\lVert \mathbf{C}_2 - \mathbf{C}_1 \right\rVert
 $$
@@ -32,7 +32,7 @@ $$
    **angle bisector direction**
 
 $$
-\mathbf{b} = \mathrm{normalize}\!\left(\mathbf{n}_1 + \mathbf{n}_2\right)
+\mathbf{b} = \mathrm{normalize}\left(\mathbf{n}_1 + \mathbf{n}_2\right)
 $$
 
 3. the target plane $P$ (the wire plane / bisector plane) is spanned by $\mathbf{d}$ and
@@ -60,9 +60,9 @@ the horizontal direction a wire bonder is programmed in — see
 
 $$
 \begin{aligned}
-\mathbf{x} &= \mathrm{normalize}\!\left(\mathbf{y} \times \mathbf{z}\right)
+\mathbf{x} &= \mathrm{normalize}\left(\mathbf{y} \times \mathbf{z}\right)
   &&\text{horizontal axis: pad-1 plane } \cap \text{ wire plane}\\[2pt]
-\mathbf{y} &= \mathrm{normalize}\!\left(\mathbf{n}_1 - (\mathbf{n}_1 \cdot \mathbf{z})\,\mathbf{z}\right)
+\mathbf{y} &= \mathrm{normalize}\left(\mathbf{n}_1 - (\mathbf{n}_1 \cdot \mathbf{z})\,\mathbf{z}\right)
   &&\text{height axis: the in-plane perpendicular to the level line}
 \end{aligned}
 $$

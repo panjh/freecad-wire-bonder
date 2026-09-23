@@ -20,7 +20,7 @@
 1. 取两个平面的**质心** $\mathbf{C}_1$、$\mathbf{C}_2$，得到连线方向
 
 $$
-\mathbf{d} = \mathrm{normalize}\!\left(\mathbf{C}_2 - \mathbf{C}_1\right),
+\mathbf{d} = \mathrm{normalize}\left(\mathbf{C}_2 - \mathbf{C}_1\right),
 \qquad
 L = \left\lVert \mathbf{C}_2 - \mathbf{C}_1 \right\rVert
 $$
@@ -29,7 +29,7 @@ $$
    （夹角大于 $90^\circ$ 时翻转 $\mathbf{n}_2$），再取**角平分方向**
 
 $$
-\mathbf{b} = \mathrm{normalize}\!\left(\mathbf{n}_1 + \mathbf{n}_2\right)
+\mathbf{b} = \mathrm{normalize}\left(\mathbf{n}_1 + \mathbf{n}_2\right)
 $$
 
 3. 目标平面 $P$（走线平面 / 平分平面）由 $\mathbf{d}$ 与 $\mathbf{b}$ 张成，它同时通过
@@ -52,9 +52,9 @@ $$
 
 $$
 \begin{aligned}
-\mathbf{x} &= \mathrm{normalize}\!\left(\mathbf{y} \times \mathbf{z}\right)
+\mathbf{x} &= \mathrm{normalize}\left(\mathbf{y} \times \mathbf{z}\right)
   &&\text{水平轴：起点焊盘平面 } \cap \text{ 走线平面 的交线}\\[2pt]
-\mathbf{y} &= \mathrm{normalize}\!\left(\mathbf{n}_1 - (\mathbf{n}_1 \cdot \mathbf{z})\,\mathbf{z}\right)
+\mathbf{y} &= \mathrm{normalize}\left(\mathbf{n}_1 - (\mathbf{n}_1 \cdot \mathbf{z})\,\mathbf{z}\right)
   &&\text{高度轴：该水平线在走线平面内的垂线}
 \end{aligned}
 $$
