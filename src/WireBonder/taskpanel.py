@@ -7,9 +7,9 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 try:  # FreeCAD 1.x ships a PySide compatibility layer (backed by PySide6 / PySide2)
-    from PySide import QtCore, QtWidgets
+    from PySide import QtCore, QtWidgets # type: ignore
 except ImportError:  # pragma: no cover
-    from PySide2 import QtCore, QtWidgets
+    from PySide2 import QtCore, QtWidgets # type: ignore
 
 from . import core, features, settings
 from .i18n import translate as _
@@ -348,8 +348,8 @@ class WireBondTaskPanel:
             "ball_diameter": get_length_mm(self.ball_diameter_um),
             "start_ball_mode": start_mode,
             "end_ball_mode": end_mode,
-            "ball_top_diameter": get_length_mm(self.ball_top_um),
-            "ball_bottom_diameter": get_length_mm(self.ball_bottom_um),
+            "frustum_top_diameter": get_length_mm(self.frustum_top_um),
+            "frustum_bottom_diameter": get_length_mm(self.frustum_bottom_um),
             "plane_rotation": get_quantity(self.plane_rotation_deg, "deg"),
             "peak_ratio": get_number(self.peak_ratio),
             "rise_angle": get_quantity(self.rise_angle, "deg"),
@@ -630,30 +630,30 @@ class WireBondTaskPanel:
         form.addRow(self.ball_diameter_label, self.ball_diameter_um)
 
         # top / bottom rows (frustum) -----------------------------------
-        self.ball_top_label = QtWidgets.QLabel(_("Top Diameter"))
-        self.ball_top_um = _length_field(
-            self.settings.get("ball_top_diameter", core.DEFAULT_BALL_DIAMETER),
+        self.frustum_top_label = QtWidgets.QLabel(_("Top Diameter"))
+        self.frustum_top_um = _length_field(
+            self.settings.get("frustum_top_diameter", core.DEFAULT_BALL_DIAMETER),
             decimals=4, minimum=0.001, maximum=20.0, step=0.005,
             scroll_area=self._scroll)
-        self.ball_top_um.setToolTip(
+        self.frustum_top_um.setToolTip(
             _("Frustum: diameter of the end away from the pad."))
-        form.addRow(self.ball_top_label, self.ball_top_um)
+        form.addRow(self.frustum_top_label, self.frustum_top_um)
 
-        self.ball_bottom_label = QtWidgets.QLabel(_("Bottom Diameter"))
-        self.ball_bottom_um = _length_field(
-            self.settings.get("ball_bottom_diameter",
+        self.frustum_bottom_label = QtWidgets.QLabel(_("Bottom Diameter"))
+        self.frustum_bottom_um = _length_field(
+            self.settings.get("frustum_bottom_diameter",
                               core.DEFAULT_BALL_DIAMETER),
             decimals=4, minimum=0.001, maximum=20.0, step=0.005,
             scroll_area=self._scroll)
-        self.ball_bottom_um.setToolTip(
+        self.frustum_bottom_um.setToolTip(
             _("Frustum: diameter of the end sitting on the pad."))
-        form.addRow(self.ball_bottom_label, self.ball_bottom_um)
+        form.addRow(self.frustum_bottom_label, self.frustum_bottom_um)
 
         # show only the rows the selected shape actually uses
         self._ball_rows = (
             (self.ball_diameter_label, self.ball_diameter_um, "diameter"),
-            (self.ball_top_label, self.ball_top_um, "top"),
-            (self.ball_bottom_label, self.ball_bottom_um, "bottom"),
+            (self.frustum_top_label, self.frustum_top_um, "top"),
+            (self.frustum_bottom_label, self.frustum_bottom_um, "bottom"),
         )
         self._on_ball_mode_changed()
 
@@ -732,8 +732,8 @@ class WireBondTaskPanel:
         set_length_mm(self.diameter_um, defaults["wire_diameter"])
         set_length_mm(self.clearance_um, defaults["clearance"])
         set_length_mm(self.ball_diameter_um, defaults["ball_diameter"])
-        set_length_mm(self.ball_top_um, defaults["ball_top_diameter"])
-        set_length_mm(self.ball_bottom_um, defaults["ball_bottom_diameter"])
+        set_length_mm(self.frustum_top_um, defaults["frustum_top_diameter"])
+        set_length_mm(self.frustum_bottom_um, defaults["frustum_bottom_diameter"])
         set_length_mm(self.lead_distance, defaults["lead_distance"])
         for combo, key in ((self.start_ball_mode, "start_ball_mode"),
                            (self.end_ball_mode, "end_ball_mode")):
@@ -800,11 +800,11 @@ class WireBondTaskPanel:
                 wire.EndBallMode = current["end_ball_mode"]
             if hasattr(wire, "LeadDistance"):
                 wire.LeadDistance = "{} mm".format(current["lead_distance"])
-            if hasattr(wire, "BallTopDiameter"):
-                wire.BallTopDiameter = "{} mm".format(
-                    current["ball_top_diameter"])
-                wire.BallBottomDiameter = "{} mm".format(
-                    current["ball_bottom_diameter"])
+            if hasattr(wire, "FrustumTopDiameter"):
+                wire.FrustumTopDiameter = "{} mm".format(
+                    current["frustum_top_diameter"])
+                wire.FrustumBottomDiameter = "{} mm".format(
+                    current["frustum_bottom_diameter"])
             wire.PlaneRotation = "{} deg".format(current["plane_rotation"])
 
             plane = None

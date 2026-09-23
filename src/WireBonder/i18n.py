@@ -219,8 +219,8 @@ _ZH = {
     "Sphere": "球形",
     "Frustum": "圆台",
     "Ball Diameter": "焊球直径",
-    "Ball Top Diameter": "圆台上底直径",
-    "Ball Bottom Diameter": "圆台下底直径",
+    "Frustum Top Diameter": "圆台上底直径",
+    "Frustum Bottom Diameter": "圆台下底直径",
     "Top Diameter": "上底直径",
     "Bottom Diameter": "下底直径",
     "Shape of the bump at each bond point: none, a ball bond (sphere), or a "

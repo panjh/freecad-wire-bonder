@@ -40,8 +40,10 @@ _SPEC = {
     "show_centreline": ("ShowCentreline", True),
     "start_ball_mode": ("StartBallMode", core.BUMP_SPHERE),
     "end_ball_mode": ("EndBallMode", core.BUMP_SPHERE),
-    "ball_top_diameter": ("BallTopDiameter", core.DEFAULT_BALL_DIAMETER),
-    "ball_bottom_diameter": ("BallBottomDiameter", core.DEFAULT_BALL_DIAMETER),
+    "frustum_top_diameter": ("FrustumTopDiameter",
+                             core.DEFAULT_FRUSTUM_TOP_DIAMETER),
+    "frustum_bottom_diameter": ("FrustumBottomDiameter",
+                                core.DEFAULT_FRUSTUM_BOTTOM_DIAMETER),
     "lead_distance": ("LeadDistance", core.DEFAULT_LEAD_DISTANCE),
     "create_plane": ("CreatePlane", False),
     # UI state: which panel sections are expanded (not a geometry parameter)

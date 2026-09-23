@@ -4,12 +4,15 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.4.0 |
-| 日期 | 2026-09-21 |
+| 文档版本 | v0.12.0 |
+| 日期 | 2026-09-23 |
 | 状态 | 已实现并通过实机验证 |
 | 源码目录 | [`src/`](../src/README.md) |
 | 安装文档 | [`README.md`](../README.md) |
 | 插件说明 | [`src/README.md`](../src/README.md) |
+| **Agent 交接指南** | **[`context/agent-guide.md`](../context/agent-guide.md)**（上下文、关键决策、踩坑，新人先读） |
+| 控制点定义 | [`spline-ctrl-points.md`](spline-ctrl-points.md) |
+| 参数详解 | [`parameters.md`](parameters.md) |
 
 ---
 
@@ -302,8 +305,8 @@ ViewProviderBisectorPlane(vobj)  # 半透明绿色显示样式
 | `EndBallMode` | `App::PropertyEnumeration` | `sphere` | — | C2 处的凸起形状 |
 | `LeadDistance` | `App::PropertyLength` | 0.03 | mm | 焊盘到控制点 B / D 的距离，沿出线/落线射线测量（**30 µm**） |
 | `BallDiameter` | `App::PropertyLength` | 0.05 | mm | 球径（球形）或凸点高度（圆台） |
-| `BallTopDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台远离焊盘一端的直径 |
-| `BallBottomDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台贴着焊盘一端的直径 |
+| `FrustumTopDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台远离焊盘一端的直径 |
+| `FrustumBottomDiameter` | `App::PropertyLength` | 0.05 | mm | 圆台贴着焊盘一端的直径 |
 | `PlaneRotation` | `App::PropertyAngle` | 0° | — | 走线平面绕两质心连线的偏转角（0° = 与原平分平面重合） |
 
 `Shape` 的构成取决于参数：

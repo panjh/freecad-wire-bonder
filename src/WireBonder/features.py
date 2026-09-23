@@ -10,7 +10,7 @@ automatically and rebuilds the geometry.
 import os
 
 import FreeCAD as App
-import Part
+import Part # type: ignore
 
 from . import core
 from .i18n import translate as _
@@ -95,12 +95,16 @@ class WireBondFeature:
                       _("Ball diameter (default 50 um); for a frustum it is "
                         "the bump height"),
                       core.DEFAULT_BALL_DIAMETER)
-        _add_property(obj, "App::PropertyLength", "BallTopDiameter", "WireBond",
+        # The property NAME is what the property editor shows (FreeCAD splits
+        # the camel case into words), so it has to say "Frustum" too - a
+        # description alone would leave the title reading "Ball Top Diameter".
+        _add_property(obj, "App::PropertyLength", "FrustumTopDiameter", "WireBond",
                       _("Frustum: diameter of the end away from the pad"),
-                      core.DEFAULT_BALL_DIAMETER)
-        _add_property(obj, "App::PropertyLength", "BallBottomDiameter", "WireBond",
+                      core.DEFAULT_FRUSTUM_TOP_DIAMETER)
+        _add_property(obj, "App::PropertyLength", "FrustumBottomDiameter",
+                      "WireBond",
                       _("Frustum: diameter of the end sitting on the pad"),
-                      core.DEFAULT_BALL_DIAMETER)
+                      core.DEFAULT_FRUSTUM_BOTTOM_DIAMETER)
         _add_property(obj, "App::PropertyAngle", "PlaneRotation", "WireBond",
                       _("Rotation of the wire plane about the centroid line "
                         "(0 deg = coincident with the bisector plane)"),
@@ -128,9 +132,9 @@ class WireBondFeature:
             fall_angle=obj.FallAngle.getValueAs("deg"),
             make_solid=bool(obj.MakeSolid),
             ball_diameter=float(obj.BallDiameter),
-            top_diameter=float(getattr(obj, "BallTopDiameter",
+            top_diameter=float(getattr(obj, "FrustumTopDiameter",
                                        obj.BallDiameter)),
-            bottom_diameter=float(getattr(obj, "BallBottomDiameter",
+            bottom_diameter=float(getattr(obj, "FrustumBottomDiameter",
                                           obj.BallDiameter)),
             start_ball_mode=getattr(obj, "StartBallMode", core.BUMP_SPHERE),
             end_ball_mode=getattr(obj, "EndBallMode", core.BUMP_SPHERE),

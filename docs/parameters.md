@@ -20,8 +20,8 @@
 | 金线参数 | 起点焊球 (C1) | `StartBallMode` | — | 球形 | 无 / 球形 / 圆台 |
 | 金线参数 | 终点焊球 (C2) | `EndBallMode` | — | 球形 | 无 / 球形 / 圆台 |
 | 金线参数 | 焊球直径（球形；圆台时兼作高度） | `BallDiameter` | µm（内部 mm） | 50 µm | 1 – 20000 µm |
-| 金线参数 | 上底直径 | `BallTopDiameter` | µm（内部 mm） | 50 µm | 1 – 20000 µm |
-| 金线参数 | 下底直径 | `BallBottomDiameter` | µm（内部 mm） | 50 µm | 1 – 20000 µm |
+| 金线参数 | 上底直径 | `FrustumTopDiameter` | µm（内部 mm） | 50 µm | 1 – 20000 µm |
+| 金线参数 | 下底直径 | `FrustumBottomDiameter` | µm（内部 mm） | 50 µm | 1 – 20000 µm |
 | 输出选项 | 生成金线实体 | `MakeSolid` | 布尔 | 否 | 勾选 / 不勾选 |
 | 输出选项 | 同时显示中心线 | `ShowCentreline` | 布尔 | 是 | 勾选 / 不勾选 |
 | 输出选项 | 创建平分辅助面 | `CreatePlane` | 布尔 | 否 | 勾选 / 不勾选 |
@@ -463,7 +463,7 @@ D = E − LeadDistance × (cos(FallAngle), −sin(FallAngle))
 | 球形 | 圆台 | **显示** | **显示** |
 | 无 | 圆台 | 隐藏 | 显示 |
 
-（属性视图中的对应字段为 `StartBallMode`（C1）、`EndBallMode`（C2），以及共用的 `BallDiameter`、`BallTopDiameter`、`BallBottomDiameter`。旧属性 `BallMode` 仍保留：只有当两端形状相同时它才等于该形状，否则给出一个合并值，保证旧脚本仍可用。）
+（属性视图中的对应字段为 `StartBallMode`（C1）、`EndBallMode`（C2），以及共用的 `BallDiameter`、`FrustumTopDiameter`、`FrustumBottomDiameter`。旧属性 `BallMode` 仍保留：只有当两端形状相同时它才等于该形状，否则给出一个合并值，保证旧脚本仍可用。）
 
 ### 球形 `sphere`
 
@@ -479,11 +479,11 @@ D = E − LeadDistance × (cos(FallAngle), −sin(FallAngle))
 
 | 项目 | 内容 |
 | --- | --- |
-| 参数 | 上底直径 `BallTopDiameter`、下底直径 `BallBottomDiameter`（默认均为 50 µm） |
+| 参数 | 上底直径 `FrustumTopDiameter`、下底直径 `FrustumBottomDiameter`（默认均为 50 µm） |
 | 高度 | 由「焊球直径」`BallDiameter` 兼职，即高度 = 该值 |
 | 作用 | 生成一个**截锥**（truncated cone）代替球体，用来表示楔形焊点（wedge bond）或压扁的焊点 |
 
-**定向**：圆台沿**该焊盘的外法线**摆放 —— 下底（`BallBottomDiameter`）贴在焊盘上，上底（`BallTopDiameter`）朝外。实测：法线为 +Z 时凸台位于 `z[0, 0.05]`，法线为 −Z 时位于 `z[-0.05, 0]`。
+**定向**：圆台沿**该焊盘的外法线**摆放 —— 下底（`FrustumBottomDiameter`）贴在焊盘上，上底（`FrustumTopDiameter`）朝外。实测：法线为 +Z 时凸台位于 `z[0, 0.05]`，法线为 −Z 时位于 `z[-0.05, 0]`。
 
 体积校验（下底 φ80 µm、上底 φ30 µm、高 50 µm）：`0.000126973 mm³`，
 与 `π·h/3·(R² + Rr + r²)` 完全一致。
@@ -534,7 +534,7 @@ D = E − LeadDistance × (cos(FallAngle), −sin(FallAngle))
 | 存储位置 | `User parameter:BaseApp/Preferences/Mod/WireBonder` |
 | 写入时机 | 面板点 **OK** 成功后（保存的是面板全部 11 项） |
 | 读取时机 | 每次打开面板时自动回填 |
-| 存储字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `StartBallMode` / `EndBallMode` / `BallTopDiameter` / `BallBottomDiameter` / `LeadDistance` / `PlaneRotation` / `PeakRatio` / `RiseAngle` / `FallAngle` / `MakeSolid` / `ShowCentreline` / `MakeBalls` / `CreatePlane` |
+| 存储字段 | `WireDiameter` / `Clearance` / `BallDiameter` / `StartBallMode` / `EndBallMode` / `FrustumTopDiameter` / `FrustumBottomDiameter` / `LeadDistance` / `PlaneRotation` / `PeakRatio` / `RiseAngle` / `FallAngle` / `MakeSolid` / `ShowCentreline` / `MakeBalls` / `CreatePlane` |
 | 容错 | 逐项独立读取，缺失或类型异常时回退内置默认；读取时会把值夹到面板控件合法区间 |
 | 重置 | 面板底部 **恢复默认值** 按钮（同时清空存储），或 `Tools ▸ Edit parameters ▸ BaseApp ▸ Preferences ▸ Mod ▸ WireBonder` |
 
@@ -551,7 +551,7 @@ D = E − LeadDistance × (cos(FallAngle), −sin(FallAngle))
 | `WireDiameter` | `20 um`、`0.02 mm`、`20 µm` |
 | `Clearance` | `500 um`、`0.5 mm` |
 | `BallDiameter` | `50 um`、`0.05 mm` |
-| `BallTopDiameter` / `BallBottomDiameter` | `30 um`、`80 um` |
+| `FrustumTopDiameter` / `FrustumBottomDiameter` | `30 um`、`80 um` |
 | `StartBallMode` / `EndBallMode` | 枚举：`none` / `sphere` / `frustum` |
 | `LeadDistance` | `10 um`、`0.01 mm` |
 | `PlaneRotation` | `30 deg`、`-45°`、`0.5 rad` |

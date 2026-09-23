@@ -130,8 +130,8 @@ Gui.activateWorkbench("WireBonderWorkbench")
 | Bond Bump at C2 | Sphere | Shape at the second bond point; may differ from C1 (e.g. ball on the chip, frustum on the substrate) |
 | Lead Distance | 30 µm | Distance from each pad to its control point B / D, measured along the rise / fall ray |
 | Ball Diameter | 50 µm | Sphere: the ball diameter (about 2.5× the wire diameter). Frustum: the bump height |
-| Ball Top Diameter | 50 µm | Frustum: diameter of the end away from the pad (shown for frustum only) |
-| Ball Bottom Diameter | 50 µm | Frustum: diameter of the end on the pad (shown for frustum only) |
+| Frustum Top Diameter | 50 µm | Frustum: diameter of the end away from the pad (shown for frustum only) |
+| Frustum Bottom Diameter | 50 µm | Frustum: diameter of the end on the pad (shown for frustum only) |
 | Create the gold wire solid | No | Produces a solid with the real diameter; sweeping is slow for tiny diameters |
 | Also show the centreline | Yes | Also visible when only the centreline is generated, handy for small diameters |
 | Create bond balls | Yes | Creates a ball at each centroid; the diameter comes from "Bond Ball Diameter" |

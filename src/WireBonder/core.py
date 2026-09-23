@@ -55,13 +55,15 @@ class WireBondError(Exception):
 # Default parameters (in mm)
 # ----------------------------------------------------------------------
 DEFAULT_WIRE_DIAMETER = 0.02   # 20 um, typical gold wire diameter
-DEFAULT_CLEARANCE = 0.5        # clearance 500 um (apex height above the centroid line)
-DEFAULT_PEAK_RATIO = 0.42      # apex position as a ratio of the centroid distance
+DEFAULT_CLEARANCE = 0.2        # clearance 500 um (apex height above the centroid line)
+DEFAULT_PEAK_RATIO = 0.40      # apex position as a ratio of the centroid distance
 DEFAULT_RISE_ANGLE = 75.0      # deg from the A-E line; 90 deg = perpendicular.
 #                                A steep take-off, as in the reference sketch.
-DEFAULT_FALL_ANGLE = 20.0      # deg from the A-E line; a shallower landing than
+DEFAULT_FALL_ANGLE = 15.0      # deg from the A-E line; a shallower landing than
 #                                the take-off, again following the sketch
 DEFAULT_BALL_DIAMETER = 0.05   # bond ball diameter 50 um (about 2.5x the wire diameter)
+DEFAULT_FRUSTUM_TOP_DIAMETER = 0.05 # bond frustum top diameter
+DEFAULT_FRUSTUM_BOTTOM_DIAMETER = 0.05 # bond frustum bottom diameter
 DEFAULT_LEAD_DISTANCE = 0.03   # 30 um along the rise/fall ray. Swept against the
 #                                reference proportions, 30 um gives a crest about
 #                                125 um wide with an 14% descent deviation, a good
@@ -362,8 +364,8 @@ BUMP_MODES = (BUMP_NONE, BUMP_SPHERE, BUMP_FRUSTUM)
 
 def bond_bumps(centre1, centre2, mode=BUMP_SPHERE,
                diameter=DEFAULT_BALL_DIAMETER,
-               top_diameter=DEFAULT_BALL_DIAMETER,
-               bottom_diameter=DEFAULT_BALL_DIAMETER,
+               top_diameter=DEFAULT_FRUSTUM_TOP_DIAMETER,
+               bottom_diameter=DEFAULT_FRUSTUM_BOTTOM_DIAMETER,
                direction=None):
     """Create a bond bump at each centroid, in the shape selected by ``mode``.
 

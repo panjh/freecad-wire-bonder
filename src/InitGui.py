@@ -175,7 +175,7 @@ def _register_addon():
             English msgid. Assigning them explicitly keeps the buttons in sync.
             """
             try:
-                from PySide import QtGui
+                from PySide import QtGui # type: ignore
                 from WireBonder import commands as _commands
 
                 window = Gui.getMainWindow()
@@ -200,7 +200,7 @@ def _register_addon():
             loop turn makes our labels win.
             """
             try:
-                from PySide import QtCore
+                from PySide import QtCore # type: ignore
 
                 QtCore.QTimer.singleShot(0, _apply_action_labels)
             except Exception:
